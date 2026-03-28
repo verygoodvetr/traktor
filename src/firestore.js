@@ -138,8 +138,31 @@ export async function markSeasonWatched(user, showId, seasonNum, episodes, watch
 }
 
 export async function markAllSeasonsWatched(user, showId, seasons, watchedAt = 'now') {
+  // Process in parallel batches of 100 (Firestore limit: 500)
+  const BATCH_SIZE = 100
+  const allOps = []
+
   for (const { seasonNum, episodes } of seasons) {
-    await markSeasonWatched(user, showId, seasonNum, episodes, watchedAt)
+    for (const ep of episodes) {
+      allOps.push({
+        ref: doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${ep.episode_number}`),
+        data: {
+          showId,
+          seasonNum,
+          episodeNum: ep.episode_number,
+          watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt,
+          watchedAtUnknown: watchedAt === 'unknown'
+        }
+      })
+    }
+  }
+
+  // Process in chunks
+  for (let i = 0; i < allOps.length; i += BATCH_SIZE) {
+    const chunk = allOps.slice(i, i + BATCH_SIZE)
+    const batch = writeBatch(db)
+    chunk.forEach(({ ref, data }) => batch.set(ref, data))
+    await batch.commit()
   }
 }
 

@@ -141,7 +141,6 @@ export async function getWatchProviders(type, id) {
 export async function getPersonalizedRecommendations(watchedItems) {
   if (!watchedItems || watchedItems.length === 0) return []
 
-  // Get the 5 most recently watched with highest ratings
   const topWatched = watchedItems
     .filter(i => i.id && i.media_type)
     .sort((a, b) => {
@@ -149,7 +148,7 @@ export async function getPersonalizedRecommendations(watchedItems) {
       const dateScore = new Date(b.watchedAt || 0) - new Date(a.watchedAt || 0)
       return ratingScore * 2 + dateScore
     })
-    .slice(0, 5)
+    .slice(0, 8)
 
   const seen = new Set(watchedItems.map(i => `${i.media_type}-${i.id}`))
   const recommendations = new Map()
@@ -161,17 +160,20 @@ export async function getPersonalizedRecommendations(watchedItems) {
       )
       const data = await response.json()
       for (const rec of (data.results || [])) {
-        const recKey = `${rec.media_type || item.media_type}-${rec.id}`
+        const recType = rec.media_type || item.media_type
+        const recKey = `${recType}-${rec.id}`
         if (seen.has(recKey)) continue
         if (!rec.poster_path) continue
         if (rec.vote_count < 50) continue
-        const existing = recommendations.get(rec.id)
+        const existing = recommendations.get(recKey)
+        const reason = `Because you watched ${item.title || item.name}`
         if (existing) {
           existing.score += (item.rating || 5) + rec.popularity / 100
         } else {
-          recommendations.set(rec.id, {
+          recommendations.set(recKey, {
             ...rec,
-            media_type: rec.media_type || item.media_type,
+            media_type: recType,
+            reason,
             score: (item.rating || 5) + rec.popularity / 100
           })
         }
