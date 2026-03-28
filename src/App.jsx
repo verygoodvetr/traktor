@@ -94,59 +94,6 @@ function App() {
 
   if (user === undefined) return null
 
-  function StreakWidget({ streak }) {
-    const [open, setOpen] = useState(false)
-    const ref = useRef(null)
-
-    useEffect(() => {
-      function handler(e) {
-        if (!ref.current?.contains(e.target)) setOpen(false)
-      }
-      document.addEventListener('click', handler)
-      return () => document.removeEventListener('click', handler)
-    }, [])
-
-    return (
-      <div className="streak-widget" ref={ref}>
-        <button
-          className={`streak-btn ${streak.activatedToday ? 'active' : 'inactive'}`}
-          onClick={() => setOpen(p => !p)}
-        >
-          <span>🔥</span>
-          <span>{streak.streak}</span>
-        </button>
-        {open && (
-          <div className="streak-dropdown">
-            <div className="streak-big">
-              <span className="streak-big-num">{streak.streak}</span>
-              <div>
-                <p className="streak-big-label">day streak</p>
-                {!streak.activatedToday && (
-                  <p style={{ fontSize: 11, color: '#ff6b00', marginTop: 2 }}>
-                    Watch something today to keep it!
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="streak-stats">
-              <div className="streak-stat-row">
-                <span className="streak-stat-label">Longest streak</span>
-                <span className="streak-stat-val">{streak.longest} days</span>
-              </div>
-              <div className="streak-stat-row">
-                <span className="streak-stat-label">Today</span>
-                <span className="streak-stat-val">{streak.activatedToday ? '✓ Active' : '✗ Not yet'}</span>
-              </div>
-            </div>
-            <p className="streak-tip">
-              Watch at least one episode or movie per day to maintain your streak.
-            </p>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <BrowserRouter>
       <ToastContainer />
@@ -163,7 +110,10 @@ function App() {
         </div>
         <div className="nav-auth">
           {user && streak && (
-            <StreakWidget streak={streak} />
+            <div className={`nav-streak ${streak.activatedToday ? 'active' : 'inactive'}`}>
+              <span className="nav-streak-emoji">🔥</span>
+              <span>{streak.streak}</span>
+            </div>
           )}
           {user ? (
             <div className="profile-dropdown">
