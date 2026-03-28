@@ -1,1 +1,0 @@
-1. ask for all of app.jsx, FirstLoginModal.jsx, Settings.jsx, MovieDetail.jsx
