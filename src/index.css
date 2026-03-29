@@ -459,7 +459,7 @@ input[type="time"] { width: auto; }
   text-overflow: ellipsis;
 }
 
-/* ── Continue watching redesign (progress bar INSIDE image) ── */
+/* ── Continue Watching — Trakt style (all info inside image) ── */
 .backdrop-card {
   cursor: pointer;
   border-radius: var(--radius-lg);
@@ -477,6 +477,7 @@ input[type="time"] { width: auto; }
   border-color: var(--border2);
 }
 
+/* The image container — all info overlaid inside */
 .backdrop-card-img {
   position: relative;
   width: 100%;
@@ -494,66 +495,144 @@ input[type="time"] { width: auto; }
   transition: transform 0.3s ease;
 }
 
-.backdrop-card:hover .backdrop-card-img img { transform: scale(1.04); }
+.backdrop-card:hover .backdrop-card-img img {
+  transform: scale(1.04);
+}
 
-/* Progress bar INSIDE the image */
-.backdrop-in-image-bar {
+/* Dark gradient at bottom of image for legibility */
+.backdrop-card-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(0,0,0,0.92) 0%,
+    rgba(0,0,0,0.5)  35%,
+    transparent       65%
+  );
+  pointer-events: none;
+}
+
+/* ── Bottom info row (inside image) ── */
+.backdrop-card-bottom {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 3px;
-  background: rgba(255,255,255,0.2);
+  padding: 10px 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.backdrop-in-image-fill {
-  height: 100%;
-  background: var(--red);
-  transition: width 0.3s;
-}
-
-/* Bottom gradient over image */
-.backdrop-card-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 55%);
-}
-
-/* Info overlaid on image bottom */
-.backdrop-card-onimage {
-  position: absolute;
-  bottom: 8px;
-  left: 10px;
-  right: 10px;
+/* Row: episode badge + runtime on left, remaining + total time on right */
+.backdrop-card-info-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
+}
+
+.backdrop-card-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.backdrop-card-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+  white-space: nowrap;
 }
 
 .backdrop-card-ep {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   background: rgba(229,9,20,0.9);
   padding: 2px 7px;
   border-radius: 3px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .backdrop-ep-runtime {
-  font-size: 11px;
-  color: rgba(255,255,255,0.7);
-  margin-left: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.75);
+  background: rgba(0,0,0,0.5);
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.backdrop-quick-watch {
-  background: rgba(255,255,255,0.15);
-  border: none;
+.backdrop-remaining {
+  font-size: 12px;
+  color: rgba(255,255,255,0.75);
+  white-space: nowrap;
+}
+
+.backdrop-dot {
+  color: rgba(255,255,255,0.35);
+  font-size: 10px;
+}
+
+/* Progress bar — sits right above the title, inside the image */
+.backdrop-in-image-bar {
+  height: 3px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 0 0 0;
+}
+
+.backdrop-in-image-fill {
+  height: 100%;
+  background: var(--red);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+/* Title + sub BELOW the progress bar, still inside the image */
+.backdrop-card-title-row {
+  padding: 6px 0 10px;
+}
+
+.backdrop-card-title {
+  font-size: 14px;
+  font-weight: 700;
   color: #fff;
-  width: 28px;
-  height: 28px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.backdrop-card-sub {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* Quick watch button — top right corner */
+.backdrop-quick-watch {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -566,39 +645,10 @@ input[type="time"] { width: auto; }
 .backdrop-card:hover .backdrop-quick-watch { opacity: 1; }
 .backdrop-quick-watch:hover { background: rgba(229,9,20,0.85) !important; }
 
-/* Card info below image */
-.backdrop-card-info {
-  padding: 10px 12px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.backdrop-card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.backdrop-card-sub {
-  font-size: 12px;
-  color: var(--text3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.backdrop-card-pct {
-  font-size: 11px;
-  color: var(--text4);
-  margin-top: 2px;
-}
-
-/* Remove old external progress bar */
-.backdrop-progress { display: none; }
+/* Hide old external bar */
+.backdrop-progress        { display: none !important; }
+.backdrop-card-info       { display: none !important; }
+.backdrop-in-image-bar-old { display: none !important; }
 
 /* ── Recommended cards ── */
 .rec-card {

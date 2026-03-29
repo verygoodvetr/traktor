@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { linkWithPopup, unlink, deleteUser, updateProfile } from 'firebase/auth'
 import { auth, googleProvider, microsoftProvider } from '../firebase'
 import { db } from '../firebase'
@@ -8,44 +8,62 @@ import { getUserProfile, updateUserProfile, isUsernameTaken, exportUserData } fr
 import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
 
+const BLOCKED_USERNAMES = [
+  'me','user','username','admin','administrator','moderator','staff',
+  'support','help','null','undefined','root','system','traktor','operator',
+  'fuck','shit','ass','bitch','bastard','cunt','dick','pussy','cock',
+  'nigger','nigga','faggot','retard',
+]
+
 function Settings({ user }) {
-  const [providers, setProviders] = useState([])
+  const [providers,      setProviders]      = useState([])
   const [showDeleteFlow, setShowDeleteFlow] = useState(false)
-  const [deleteStep, setDeleteStep] = useState(1)
-  const [confirmText, setConfirmText] = useState('')
-  const [deleting, setDeleting] = useState(false)
-  const [exporting, setExporting] = useState(false)
-  const [profile, setProfile] = useState(null)
-  const [username, setUsername] = useState('')
-  const [displayName, setDisplayName] = useState(user.displayName || '')
-  const [usernameLoading, setUsernameLoading] = useState(false)
-  const [isPrivate, setIsPrivate] = useState(false)
-  const [visibleFields, setVisibleFields] = useState({
-    watchHistory: true,
-    ratings: true,
-    watchlist: true,
-    episodeProgress: true
+  const [deleteStep,     setDeleteStep]     = useState(1)
+  const [confirmText,    setConfirmText]    = useState('')
+  const [deleting,       setDeleting]       = useState(false)
+  const [exporting,      setExporting]      = useState(false)
+  const [profile,        setProfile]        = useState(null)
+  const [username,       setUsername]       = useState('')
+  const [displayName,    setDisplayName]    = useState(user.displayName || '')
+  const [savingUsername, setSavingUsername] = useState(false)
+  const [isPrivate,      setIsPrivate]      = useState(false)
+  const [visibleFields,  setVisibleFields]  = useState({
+    watchHistory:    true,
+    ratings:         true,
+    watchlist:       true,
+    episodeProgress: true,
   })
+
+  const privacyTimer = useRef(null)
   const navigate = useNavigate()
 
+  /* ── Load profile ── */
   useEffect(() => {
     setProviders(user.providerData.map(p => p.providerId))
     getUserProfile(user.uid).then(p => {
-      if (p) {
-        setProfile(p)
-        setUsername(p.username || '')
-        setDisplayName(p.displayName || user.displayName || '')
-        setIsPrivate(p.isPrivate || false)
-        setVisibleFields(p.visibleFields || {
-          watchHistory: true,
-          ratings: true,
-          watchlist: true,
-          episodeProgress: true
-        })
-      }
+      if (!p) return
+      setProfile(p)
+      setUsername(p.username || '')
+      setDisplayName(p.displayName || user.displayName || '')
+      setIsPrivate(p.isPrivate || false)
+      setVisibleFields(p.visibleFields || {
+        watchHistory: true, ratings: true,
+        watchlist: true, episodeProgress: true,
+      })
     })
   }, [user])
 
+  /* ── Auto-save privacy settings ── */
+  useEffect(() => {
+    if (!profile) return               // don't fire on first load
+    clearTimeout(privacyTimer.current)
+    privacyTimer.current = setTimeout(async () => {
+      await updateUserProfile(user.uid, { isPrivate, visibleFields })
+    }, 800)
+    return () => clearTimeout(privacyTimer.current)
+  }, [isPrivate, visibleFields]) // eslint-disable-line
+
+  /* ── Linked accounts ── */
   async function linkProvider(provider, providerId) {
     try {
       await linkWithPopup(auth.currentUser, provider)
@@ -62,121 +80,106 @@ function Settings({ user }) {
 
   async function unlinkProvider(providerId) {
     if (providers.length === 1) {
-      showToast("You can't unlink your only sign in method!", 'error')
+      showToast("You can't unlink your only sign-in method!", 'error')
       return
     }
     try {
       await unlink(auth.currentUser, providerId)
       setProviders(prev => prev.filter(p => p !== providerId))
       showToast('Account unlinked.')
-    } catch (err) {
+    } catch {
       showToast('Something went wrong, please try again.', 'error')
     }
   }
 
+  /* ── Save username ── */
   async function saveUsername() {
     const trimmed = username.trim()
-    if (trimmed.length < 3) {
-      showToast('Username must be at least 3 characters.', 'error')
-      return
+    if (trimmed.length < 2) {
+      showToast('Username must be at least 2 characters.', 'error'); return
+    }
+    if (trimmed.length > 24) {
+      showToast('Username must be at most 24 characters.', 'error'); return
     }
     if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
-      showToast('Username can only contain letters, numbers and underscores.', 'error')
-      return
+      showToast('Username can only contain letters, numbers and underscores.', 'error'); return
     }
-    setUsernameLoading(true)
+    if (BLOCKED_USERNAMES.includes(trimmed.toLowerCase())) {
+      showToast('This username is not allowed.', 'error'); return
+    }
+    setSavingUsername(true)
     if (trimmed !== profile?.username) {
       const taken = await isUsernameTaken(trimmed)
       if (taken) {
         showToast('This username is already taken.', 'error')
-        setUsernameLoading(false)
-        return
+        setSavingUsername(false); return
       }
     }
     await updateUserProfile(user.uid, { username: trimmed })
     setProfile(prev => ({ ...prev, username: trimmed }))
     showToast('Username saved!')
-    setUsernameLoading(false)
+    setSavingUsername(false)
   }
 
+  /* ── Save display name ── */
   async function saveDisplayName() {
     const trimmed = displayName.trim()
-    if (!trimmed) {
-      showToast('Display name cannot be empty.', 'error')
-      return
-    }
-    setUsernameLoading(true)
+    if (!trimmed) { showToast('Display name cannot be empty.', 'error'); return }
+    setSavingUsername(true)
     try {
       await updateProfile(auth.currentUser, { displayName: trimmed })
       await updateUserProfile(user.uid, { displayName: trimmed })
       showToast('Display name saved!')
-    } catch (err) {
+    } catch {
       showToast('Something went wrong.', 'error')
     }
-    setUsernameLoading(false)
+    setSavingUsername(false)
   }
 
-  async function savePrivacySettings() {
-    await updateUserProfile(user.uid, { isPrivate, visibleFields })
-    showToast('Privacy settings saved!')
-  }
-
+  /* ── Toggle visible field ── */
   function toggleVisibleField(field) {
     setVisibleFields(prev => ({ ...prev, [field]: !prev[field] }))
   }
 
+  /* ── Export data ── */
   async function handleExport() {
     setExporting(true)
     try {
       const JSZip = (await import('jszip')).default
-      const data = await exportUserData(user)
-      const zip = new JSZip()
+      const data  = await exportUserData(user)
+      const zip   = new JSZip()
 
-      zip.file('profile.json', JSON.stringify(data.profile, null, 2))
-
-      const watchedMovies = data.watched.filter(i => i.media_type === 'movie')
-      const watchedShows = data.watched.filter(i => i.media_type === 'tv')
-      zip.file('watched-movies.json', JSON.stringify(watchedMovies, null, 2))
-      zip.file('watched-shows.json', JSON.stringify(watchedShows, null, 2))
-
-      const watchlistMovies = data.watchlist.filter(i => i.media_type === 'movie')
-      const watchlistShows = data.watchlist.filter(i => i.media_type === 'tv')
-      zip.file('watchlist-movies.json', JSON.stringify(watchlistMovies, null, 2))
-      zip.file('watchlist-shows.json', JSON.stringify(watchlistShows, null, 2))
-
-      zip.file('episodes.json', JSON.stringify(data.episodes, null, 2))
-
-      const ratings = data.watched
-        .filter(i => i.rating !== null && i.rating !== undefined)
-        .map(i => ({
-          title: i.title,
-          media_type: i.media_type,
-          id: i.id,
-          rating: i.rating
-        }))
-      zip.file('ratings.json', JSON.stringify(ratings, null, 2))
-
+      zip.file('profile.json',         JSON.stringify(data.profile,   null, 2))
+      zip.file('watched-movies.json',  JSON.stringify(data.watched.filter(i => i.media_type === 'movie'), null, 2))
+      zip.file('watched-shows.json',   JSON.stringify(data.watched.filter(i => i.media_type === 'tv'),    null, 2))
+      zip.file('watchlist-movies.json',JSON.stringify(data.watchlist.filter(i => i.media_type === 'movie'),null,2))
+      zip.file('watchlist-shows.json', JSON.stringify(data.watchlist.filter(i => i.media_type === 'tv'),   null,2))
+      zip.file('episodes.json',        JSON.stringify(data.episodes,  null, 2))
+      zip.file('ratings.json',         JSON.stringify(
+        data.watched.filter(i => i.rating != null).map(i => ({
+          title: i.title, media_type: i.media_type, id: i.id, rating: i.rating,
+        })), null, 2
+      ))
       zip.file('README.txt', `Traktor Data Export
 ===================
 Exported: ${new Date().toLocaleString()}
-Account: ${data.profile.displayName} (${data.profile.email})
+Account:  ${data.profile.displayName} (${data.profile.email})
 
 Files included:
-- profile.json          Your account info and settings
-- watched-movies.json   Movies you have marked as watched
-- watched-shows.json    TV shows you have marked as watched
-- watchlist-movies.json Movies on your watchlist
-- watchlist-shows.json  TV shows on your watchlist
-- episodes.json         Individual episode watch history
-- ratings.json          All your ratings in one place
+- profile.json           Your account info and settings
+- watched-movies.json    Movies you have marked as watched
+- watched-shows.json     TV shows you have marked as watched
+- watchlist-movies.json  Movies on your watchlist
+- watchlist-shows.json   TV shows on your watchlist
+- episodes.json          Individual episode watch history
+- ratings.json           All your ratings in one place
 
-This export contains all personal data Traktor holds about you.
-For questions contact traktorapp@gmail.com`)
+For questions: traktorapp@gmail.com`)
 
       const blob = await zip.generateAsync({ type: 'blob' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
       a.download = `traktor-export-${new Date().toISOString().slice(0, 10)}.zip`
       a.click()
       URL.revokeObjectURL(url)
@@ -188,49 +191,34 @@ For questions contact traktorapp@gmail.com`)
     setExporting(false)
   }
 
+  /* ── Delete account ── */
   async function handleDeleteAccount() {
     if (confirmText !== 'DELETE') return
     setDeleting(true)
     try {
       const uid = user.uid
-
-      // Delete Firestore data FIRST while still authenticated
-      const subcollections = ['watched', 'watchlist', 'episodes']
-      for (const sub of subcollections) {
+      for (const sub of ['watched', 'watchlist', 'episodes']) {
         const snap = await getDocs(collection(db, 'users', uid, sub))
-        for (const d of snap.docs) {
-          await deleteDoc(doc(db, 'users', uid, sub, d.id))
-        }
+        for (const d of snap.docs) await deleteDoc(doc(db, 'users', uid, sub, d.id))
       }
       await deleteDoc(doc(db, 'users', uid))
-
-      // Then delete the Auth account
       await deleteUser(auth.currentUser)
-
       navigate('/')
       showToast('Your account has been deleted.')
     } catch (err) {
-      console.log('Delete error code:', err.code)
-      console.log('Delete error message:', err.message)
-
       if (err.code === 'auth/requires-recent-login') {
         showToast('Please sign out and sign back in, then try again immediately.', 'error')
-        setShowDeleteFlow(false)
-        setDeleteStep(1)
-        setConfirmText('')
-      } else if (err.code === 'permission-denied') {
-        showToast('Permission error — please sign out and sign back in, then try again.', 'error')
-        setShowDeleteFlow(false)
-        setDeleteStep(1)
-        setConfirmText('')
       } else {
         showToast(`Deletion failed: ${err.message}`, 'error')
       }
+      setShowDeleteFlow(false)
+      setDeleteStep(1)
+      setConfirmText('')
       setDeleting(false)
     }
   }
 
-  const googleLinked = providers.includes('google.com')
+  const googleLinked    = providers.includes('google.com')
   const microsoftLinked = providers.includes('microsoft.com')
 
   return (
@@ -239,6 +227,7 @@ For questions contact traktorapp@gmail.com`)
         <div className="settings-page">
           <h1>Settings</h1>
 
+          {/* ── Profile ── */}
           <div className="settings-section">
             <h2>Profile</h2>
             <p className="settings-desc">
@@ -246,9 +235,10 @@ For questions contact traktorapp@gmail.com`)
               {profile?.username && ` Your public profile is at /user/${profile.username}`}
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Username */}
               <div>
-                <label style={{ fontSize: '13px', opacity: 0.6, marginBottom: '6px', display: 'block' }}>
+                <label style={{ fontSize: 13, opacity: 0.6, marginBottom: 6, display: 'block' }}>
                   Username
                 </label>
                 <div className="username-row">
@@ -256,23 +246,29 @@ For questions contact traktorapp@gmail.com`)
                   <input
                     type="text"
                     value={username}
-                    onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    onChange={e =>
+                      setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
+                    }
                     placeholder="username"
-                    maxLength={20}
+                    maxLength={24}
                     style={{ flex: 1 }}
                   />
                   <button
                     className="action-btn"
                     onClick={saveUsername}
-                    disabled={usernameLoading || username.length < 3}
+                    disabled={savingUsername || username.length < 2}
                   >
-                    {usernameLoading ? 'Saving...' : 'Save'}
+                    {savingUsername ? 'Saving…' : 'Save'}
                   </button>
                 </div>
+                <p style={{ fontSize: 12, color: 'var(--text4)', marginTop: 4 }}>
+                  2–24 characters. Letters, numbers and underscores only.
+                </p>
               </div>
 
+              {/* Display name */}
               <div>
-                <label style={{ fontSize: '13px', opacity: 0.6, marginBottom: '6px', display: 'block' }}>
+                <label style={{ fontSize: 13, opacity: 0.6, marginBottom: 6, display: 'block' }}>
                   Display name
                 </label>
                 <div className="username-row">
@@ -287,7 +283,7 @@ For questions contact traktorapp@gmail.com`)
                   <button
                     className="action-btn"
                     onClick={saveDisplayName}
-                    disabled={usernameLoading}
+                    disabled={savingUsername}
                   >
                     Save
                   </button>
@@ -296,9 +292,13 @@ For questions contact traktorapp@gmail.com`)
             </div>
           </div>
 
+          {/* ── Privacy ── */}
           <div className="settings-section">
             <h2>Privacy</h2>
-            <p className="settings-desc">Control who can see your profile and what they can see.</p>
+            <p className="settings-desc">
+              Control who can see your profile and what they can see.
+              Settings save automatically.
+            </p>
 
             <div className="privacy-row">
               <div>
@@ -317,13 +317,13 @@ For questions contact traktorapp@gmail.com`)
 
             {!isPrivate && (
               <>
-                <p className="settings-desc" style={{ marginTop: '16px' }}>
+                <p className="settings-desc" style={{ marginTop: 16 }}>
                   Choose what others can see on your public profile:
                 </p>
                 {[
-                  { key: 'watchHistory', label: 'Watch history' },
-                  { key: 'ratings', label: 'Ratings' },
-                  { key: 'watchlist', label: 'Watchlist' },
+                  { key: 'watchHistory',    label: 'Watch history' },
+                  { key: 'ratings',         label: 'Ratings' },
+                  { key: 'watchlist',       label: 'Watchlist' },
                   { key: 'episodeProgress', label: 'Episode progress' },
                 ].map(field => (
                   <div className="privacy-row" key={field.key}>
@@ -340,16 +340,9 @@ For questions contact traktorapp@gmail.com`)
                 ))}
               </>
             )}
-
-            <button
-              className="action-btn"
-              onClick={savePrivacySettings}
-              style={{ marginTop: '16px' }}
-            >
-              Save privacy settings
-            </button>
           </div>
 
+          {/* ── Linked accounts ── */}
           <div className="settings-section">
             <h2>Linked accounts</h2>
             <p className="settings-desc">
@@ -358,37 +351,33 @@ For questions contact traktorapp@gmail.com`)
 
             <div className="provider-row">
               <span>Google</span>
-              {googleLinked ? (
-                <button className="unlink-btn" onClick={() => unlinkProvider('google.com')}>Unlink</button>
-              ) : (
-                <button className="action-btn" onClick={() => linkProvider(googleProvider, 'google.com')}>Link Google</button>
-              )}
+              {googleLinked
+                ? <button className="unlink-btn" onClick={() => unlinkProvider('google.com')}>Unlink</button>
+                : <button className="action-btn" onClick={() => linkProvider(googleProvider, 'google.com')}>Link Google</button>
+              }
             </div>
 
             <div className="provider-row">
               <span>Microsoft</span>
-              {microsoftLinked ? (
-                <button className="unlink-btn" onClick={() => unlinkProvider('microsoft.com')}>Unlink</button>
-              ) : (
-                <button className="action-btn" onClick={() => linkProvider(microsoftProvider, 'microsoft.com')}>Link Microsoft</button>
-              )}
+              {microsoftLinked
+                ? <button className="unlink-btn" onClick={() => unlinkProvider('microsoft.com')}>Unlink</button>
+                : <button className="action-btn" onClick={() => linkProvider(microsoftProvider, 'microsoft.com')}>Link Microsoft</button>
+              }
             </div>
           </div>
 
+          {/* ── Export ── */}
           <div className="settings-section">
             <h2>Export your data</h2>
             <p className="settings-desc">
-              Download a copy of all your Traktor data including your watch history, ratings, watchlist and episode progress as a ZIP file.
+              Download a copy of all your Traktor data as a ZIP file.
             </p>
-            <button
-              className="action-btn"
-              onClick={handleExport}
-              disabled={exporting}
-            >
-              {exporting ? 'Preparing export...' : 'Export my data'}
+            <button className="action-btn" onClick={handleExport} disabled={exporting}>
+              {exporting ? 'Preparing export…' : 'Export my data'}
             </button>
           </div>
 
+          {/* ── Delete ── */}
           <div className="settings-section danger-section">
             <h2>Delete account</h2>
             <p className="settings-desc">
@@ -414,7 +403,8 @@ For questions contact traktorapp@gmail.com`)
                       <li>Your account login</li>
                     </ul>
                     <p className="delete-warning-strong">
-                      This is <strong>permanent and irreversible.</strong> There is no grace period, no backup, and no way to recover your data once deleted.
+                      This is <strong>permanent and irreversible.</strong> There is no grace period,
+                      no backup, and no way to recover your data once deleted.
                     </p>
                     <div className="delete-flow-buttons">
                       <button className="danger-btn" onClick={() => setDeleteStep(2)}>
@@ -434,7 +424,7 @@ For questions contact traktorapp@gmail.com`)
                   <div className="delete-confirm">
                     <h3>Type DELETE to confirm</h3>
                     <p className="settings-desc">
-                      Type <strong>DELETE</strong> in all caps to permanently delete your account and all your data.
+                      Type <strong>DELETE</strong> in all caps to permanently delete your account.
                     </p>
                     <input
                       type="text"
@@ -450,7 +440,7 @@ For questions contact traktorapp@gmail.com`)
                         onClick={handleDeleteAccount}
                         disabled={confirmText !== 'DELETE' || deleting}
                       >
-                        {deleting ? 'Deleting...' : 'Permanently delete my account'}
+                        {deleting ? 'Deleting…' : 'Permanently delete my account'}
                       </button>
                       <button
                         className="unlink-btn"
@@ -468,6 +458,7 @@ For questions contact traktorapp@gmail.com`)
               </div>
             )}
           </div>
+
         </div>
       </div>
     </PageWrapper>

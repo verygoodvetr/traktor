@@ -4,15 +4,22 @@ import { Link } from 'react-router-dom'
 import { updateProfile } from 'firebase/auth'
 import { auth } from '../firebase'
 
-function FirstLoginModal({ user, onComplete }) {
-  const [username, setUsername] = useState('')
-  const [displayName, setDisplayName] = useState(user.displayName || '')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [tosAccepted, setTosAccepted] = useState(false)
-  const [step, setStep] = useState(1)
+const BLOCKED_USERNAMES = [
+  'me','user','username','admin','administrator','moderator','staff',
+  'support','help','null','undefined','root','system','traktor','operator',
+  'fuck','shit','ass','bitch','bastard','cunt','dick','pussy','cock',
+  'nigger','nigga','faggot','retard',
+]
 
-  async function handleContinue() {
+function FirstLoginModal({ user, onComplete }) {
+  const [username,    setUsername]    = useState('')
+  const [displayName, setDisplayName] = useState(user.displayName || '')
+  const [error,       setError]       = useState('')
+  const [loading,     setLoading]     = useState(false)
+  const [tosAccepted, setTosAccepted] = useState(false)
+  const [step,        setStep]        = useState(1)
+
+  function handleContinue() {
     if (!tosAccepted) {
       setError('You must accept the Terms of Service to use Traktor.')
       return
@@ -26,26 +33,39 @@ function FirstLoginModal({ user, onComplete }) {
     setLoading(true)
     setError('')
 
-    const trimmedUsername = username.trim()
+    const trimmedUsername    = username.trim()
     const trimmedDisplayName = displayName.trim()
 
-    if (trimmedUsername.length < 3) {
-      setError('Username must be at least 3 characters.')
-      setLoading(false)
-      return
+    /* Length */
+    if (trimmedUsername.length < 2) {
+      setError('Username must be at least 2 characters.')
+      setLoading(false); return
     }
+    if (trimmedUsername.length > 24) {
+      setError('Username must be at most 24 characters.')
+      setLoading(false); return
+    }
+
+    /* Characters */
     if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
       setError('Username can only contain letters, numbers and underscores.')
-      setLoading(false)
-      return
+      setLoading(false); return
     }
+
+    /* Blocked list */
+    if (BLOCKED_USERNAMES.includes(trimmedUsername.toLowerCase())) {
+      setError('This username is not allowed.')
+      setLoading(false); return
+    }
+
+    /* Availability */
     const taken = await isUsernameTaken(trimmedUsername)
     if (taken) {
       setError('This username is already taken.')
-      setLoading(false)
-      return
+      setLoading(false); return
     }
 
+    /* Update display name if changed */
     if (trimmedDisplayName && trimmedDisplayName !== user.displayName) {
       await updateProfile(auth.currentUser, { displayName: trimmedDisplayName })
     }
@@ -64,6 +84,7 @@ function FirstLoginModal({ user, onComplete }) {
       <div className="modal-box">
         <h1 className="modal-brand">Traktor</h1>
 
+        {/* ── Step 1 – TOS ── */}
         {step === 1 && (
           <>
             <h2>Welcome to Traktor!</h2>
@@ -110,6 +131,7 @@ function FirstLoginModal({ user, onComplete }) {
           </>
         )}
 
+        {/* ── Step 2 – Profile ── */}
         {step === 2 && (
           <>
             <h2>Set up your profile</h2>
@@ -131,31 +153,37 @@ function FirstLoginModal({ user, onComplete }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Username */}
               <div>
                 <label className="modal-label">
                   Username <span style={{ color: '#e50914' }}>*</span>
                 </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ opacity: 0.5, fontSize: '18px' }}>@</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ opacity: 0.5, fontSize: 18 }}>@</span>
                   <input
                     type="text"
                     placeholder="username"
                     value={username}
-                    onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    onChange={e =>
+                      setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
+                    }
                     className="modal-input"
-                    maxLength={20}
+                    maxLength={24}
                     autoFocus
                     style={{ flex: 1 }}
                   />
                 </div>
-                <p className="modal-hint">Letters, numbers and underscores only. 3–20 characters.</p>
+                <p className="modal-hint">
+                  Letters, numbers and underscores only. 2–24 characters.
+                </p>
               </div>
 
+              {/* Display name */}
               <div>
                 <label className="modal-label">
                   Display name{' '}
-                  <span style={{ opacity: 0.4, fontSize: '12px' }}>(optional)</span>
+                  <span style={{ opacity: 0.4, fontSize: 12 }}>(optional)</span>
                 </label>
                 <input
                   type="text"
@@ -166,7 +194,7 @@ function FirstLoginModal({ user, onComplete }) {
                   maxLength={40}
                 />
                 <p className="modal-hint">
-                  Shown on your profile. Defaults to your Google/Microsoft name.
+                  Shown on your profile. Defaults to your Google / Microsoft name.
                 </p>
               </div>
             </div>
@@ -176,9 +204,9 @@ function FirstLoginModal({ user, onComplete }) {
             <button
               className="action-btn primary-action"
               onClick={handleFinish}
-              disabled={loading || username.length < 3}
+              disabled={loading || username.length < 2}
             >
-              {loading ? 'Setting up...' : 'Create profile'}
+              {loading ? 'Setting up…' : 'Create profile'}
             </button>
           </>
         )}

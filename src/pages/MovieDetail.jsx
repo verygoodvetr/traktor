@@ -1,30 +1,43 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getDetails, IMAGE_BASE_LARGE, IMAGE_BASE, IMAGE_BASE_ORIGINAL, getAgeRating, getVideos, getSimilar, getWatchProviders } from '../tmdb'
-import { addToWatched, removeFromWatched, addToWatchlist, removeFromWatchlist, getUserData, setRating, markSeasonWatched, getShowEpisodes } from '../firestore'
+import {
+  getDetails, IMAGE_BASE_LARGE, IMAGE_BASE, IMAGE_BASE_ORIGINAL,
+  getAgeRating, getVideos, getSimilar, getWatchProviders,
+} from '../tmdb'
+import {
+  addToWatched, removeFromWatched, addToWatchlist, removeFromWatchlist,
+  getUserData, setRating, markSeasonWatched, getShowEpisodes,
+} from '../firestore'
 import WatchedDatePicker from '../components/WatchedDatePicker'
 import PageWrapper from '../components/PageWrapper'
 import { DetailSkeleton } from '../components/Skeleton'
+import ShareModal from '../components/ShareModal'
 import { showToast } from '../components/Toast'
+
+const TMDB_KEY = import.meta.env.VITE_TMDB_KEY
 
 function MovieDetail({ user }) {
   const { type, id } = useParams()
-  const navigate = useNavigate()
-  const [item, setItem] = useState(null)
+  const navigate     = useNavigate()
+
+  const [item,         setItem]         = useState(null)
   const [watchedEntry, setWatchedEntry] = useState(null)
-  const [watched, setWatched] = useState(false)
-  const [onWatchlist, setOnWatchlist] = useState(false)
-  const [rating, setRatingState] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [watched,      setWatched]      = useState(false)
+  const [onWatchlist,  setOnWatchlist]  = useState(false)
+  const [rating,       setRatingState]  = useState(null)
+  const [loading,      setLoading]      = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
-  const [watchedEps, setWatchedEps] = useState({})
-  const [videos, setVideos] = useState([])
-  const [similar, setSimilar] = useState([])
-  const [providers, setProviders] = useState(null)
+  const [watchedEps,   setWatchedEps]   = useState({})
+  const [videos,       setVideos]       = useState([])
+  const [similar,      setSimilar]      = useState([])
+  const [providers,    setProviders]    = useState(null)
+  const [showShare,    setShowShare]    = useState(false)
 
   const key = `${type}-${id}`
 
+  /* ── Fetch media data ── */
   useEffect(() => {
+    setItem(null)
     getDetails(type, id).then(setItem)
     getVideos(type, id).then(setVideos)
     getSimilar(type, id).then(setSimilar)
@@ -32,6 +45,7 @@ function MovieDetail({ user }) {
     window.scrollTo(0, 0)
   }, [type, id])
 
+  /* ── Fetch user data ── */
   useEffect(() => {
     if (!user) return
     getUserData(user).then(data => {
@@ -46,6 +60,7 @@ function MovieDetail({ user }) {
     }
   }, [user, key, type, id])
 
+  /* ── Toggle watched ── */
   async function toggleWatched(watchedAt) {
     if (!user || loading) return
     setLoading(true)
@@ -59,8 +74,10 @@ function MovieDetail({ user }) {
     } else {
       await addToWatched(user, { ...item, media_type: type }, watchedAt)
       const newEntry = {
-        watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt,
-        watchedAtUnknown: watchedAt === 'unknown'
+        watchedAt:        watchedAt === 'now'     ? new Date().toISOString()
+                        : watchedAt === 'unknown' ? null
+                        : watchedAt,
+        watchedAtUnknown: watchedAt === 'unknown',
       }
       setWatched(true)
       setWatchedEntry(newEntry)
@@ -74,6 +91,7 @@ function MovieDetail({ user }) {
     setLoading(false)
   }
 
+  /* ── Toggle watchlist ── */
   async function toggleWatchlist() {
     if (!user || loading || watched) return
     setLoading(true)
@@ -89,6 +107,7 @@ function MovieDetail({ user }) {
     setLoading(false)
   }
 
+  /* ── Rating ── */
   async function handleRating(r) {
     if (!user || !watched) return
     await setRating(user, { ...item, media_type: type }, r)
@@ -96,77 +115,97 @@ function MovieDetail({ user }) {
     showToast(`Rated ${r}/10!`)
   }
 
+  /* ── Mark all seasons (batched) ── */
   async function handleMarkAllSeasons(watchedAt) {
     if (!user || !item) return
     setLoading(true)
     const seasons = item.seasons?.filter(s => s.season_number > 0) || []
-    for (const season of seasons) {
-      const details = await fetch(
-        `https://api.themoviedb.org/3/tv/${id}/season/${season.season_number}?api_key=${import.meta.env.VITE_TMDB_KEY}`
-      ).then(r => r.json())
-      await markSeasonWatched(user, parseInt(id), season.season_number, details.episodes || [], watchedAt)
-    }
+
+    // Fetch all season episode lists in parallel
+    const seasonData = await Promise.all(
+      seasons.map(s =>
+        fetch(`https://api.themoviedb.org/3/tv/${id}/season/${s.season_number}?api_key=${TMDB_KEY}`)
+          .then(r => r.json())
+      )
+    )
+
+    // Build one giant batch
+    const allSeasons = seasonData.map((sd, i) => ({
+      seasonNum: seasons[i].season_number,
+      episodes:  sd.episodes || [],
+    }))
+
+    // Import and use the batch function
+    const { markAllSeasonsWatched } = await import('../firestore')
+    await markAllSeasonsWatched(user, parseInt(id), allSeasons, watchedAt)
+
     await addToWatched(user, { ...item, media_type: type }, watchedAt)
     setWatched(true)
     setWatchedEntry({
-      watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt,
-      watchedAtUnknown: watchedAt === 'unknown'
+      watchedAt:        watchedAt === 'now'     ? new Date().toISOString()
+                      : watchedAt === 'unknown' ? null
+                      : watchedAt,
+      watchedAtUnknown: watchedAt === 'unknown',
     })
     showToast('Marked as watched!')
     setShowDatePicker(false)
     setLoading(false)
   }
 
-  if (!item) return <PageWrapper><DetailSkeleton /></PageWrapper>
+  /* ── Render ── */
+  if (!item) return <PageWrapper><div style={{ padding: 32 }}><DetailSkeleton /></div></PageWrapper>
 
   const directors = item.credits?.crew
     .filter(p => p.job === 'Director')
-    .map(p => p.name)
-    .join(', ')
+    .map(p => p.name).join(', ')
 
   const producers = item.credits?.crew
     .filter(p => p.job === 'Producer' || p.job === 'Executive Producer')
-    .slice(0, 3)
-    .map(p => p.name)
-    .join(', ')
+    .slice(0, 3).map(p => p.name).join(', ')
 
-  const cast = item.credits?.cast.slice(0, 8)
+  const cast       = item.credits?.cast.slice(0, 8)
+  const ageRating  = getAgeRating(item, type)
 
   const runtime = type === 'movie'
-    ? item.runtime ? `${item.runtime} min` : null
+    ? (item.runtime ? `${item.runtime} min` : null)
     : item.number_of_seasons
-      ? item.number_of_seasons === 1
-        ? item.number_of_episodes ? `${item.number_of_episodes} episodes` : '1 season'
-        : `${item.number_of_seasons} seasons`
+      ? (item.number_of_seasons === 1
+        ? (item.number_of_episodes ? `${item.number_of_episodes} episodes` : '1 season')
+        : `${item.number_of_seasons} seasons`)
       : null
 
-  const ageRating = getAgeRating(item, type)
-
-  const watchedDate = watchedEntry?.watchedAtUnknown
-    ? 'unknown date'
-    : watchedEntry?.watchedAt
-      ? new Date(watchedEntry.watchedAt).toLocaleString()
-      : null
-
-  const seasons = item.seasons?.filter(s => s.season_number > 0) || []
-  const totalEpisodes = seasons.reduce((sum, s) => sum + (s.episode_count || 0), 0)
-  const watchedEpisodeCount = Object.keys(watchedEps).length
-
-  const releaseDate = item.release_date || item.first_air_date
-  const daysSinceRelease = releaseDate
-    ? (new Date() - new Date(releaseDate)) / (1000 * 60 * 60 * 24)
+  const watchedDate = watchedEntry?.watchedAtUnknown ? 'unknown date'
+    : watchedEntry?.watchedAt ? new Date(watchedEntry.watchedAt).toLocaleString()
     : null
-  const releaseStatus = daysSinceRelease !== null
-    ? type === 'movie'
-      ? daysSinceRelease < 0 && daysSinceRelease > -180 ? 'IN THEATERS'
-        : daysSinceRelease >= 0 && daysSinceRelease <= 30 ? 'JUST RELEASED'
-        : null
-      : daysSinceRelease >= 0 && daysSinceRelease <= 30 ? 'NEW' : null
+
+  const seasons          = item.seasons?.filter(s => s.season_number > 0) || []
+  const totalEpisodes    = seasons.reduce((s, x) => s + (x.episode_count || 0), 0)
+  const watchedEpCount   = Object.keys(watchedEps).length
+
+  const releaseDate      = item.release_date || item.first_air_date
+  const daysSince        = releaseDate
+    ? (new Date() - new Date(releaseDate)) / (1000 * 60 * 60 * 24) : null
+  const releaseStatus    = daysSince != null
+    ? (type === 'movie'
+        ? (daysSince < 0 && daysSince > -180 ? 'IN THEATERS'
+          : daysSince >= 0 && daysSince <= 30 ? 'JUST RELEASED' : null)
+        : (daysSince >= 0 && daysSince <= 30 ? 'NEW' : null))
     : null
+
+  const pageUrl = `${window.location.origin}/movie/${type}/${id}`
 
   return (
     <PageWrapper>
-      <div style={{ padding: '32px' }}>
+      <div style={{ padding: 32 }}>
+        {/* Share modal */}
+        {showShare && (
+          <ShareModal
+            title={item.title || item.name}
+            url={pageUrl}
+            onClose={() => setShowShare(false)}
+          />
+        )}
+
         <div className="detail-page-wrapper">
           {item.backdrop_path && (
             <div
@@ -178,6 +217,7 @@ function MovieDetail({ user }) {
           <div className="detail-page">
             <button className="back-btn" onClick={() => navigate(-1)}>← Back</button>
 
+            {/* ── Top section ── */}
             <div className="detail-top">
               {item.poster_path && (
                 <img
@@ -186,6 +226,7 @@ function MovieDetail({ user }) {
                   alt={item.title || item.name}
                 />
               )}
+
               <div className="detail-info">
                 <h1>{item.title || item.name}</h1>
 
@@ -194,12 +235,10 @@ function MovieDetail({ user }) {
                 )}
 
                 <div className="detail-meta">
-                  {releaseStatus && (
-                    <span className="release-badge">{releaseStatus}</span>
-                  )}
+                  {releaseStatus && <span className="release-badge">{releaseStatus}</span>}
                   <span>{(item.release_date || item.first_air_date || '').slice(0, 4)}</span>
-                  {runtime && <span>{runtime}</span>}
-                  {ageRating && <span className="age-rating">{ageRating}</span>}
+                  {runtime    && <span>{runtime}</span>}
+                  {ageRating  && <span className="age-rating">{ageRating}</span>}
                   {item.vote_average > 0 && (
                     <span>
                       <span className="tmdb-badge">TMDB</span>
@@ -211,7 +250,7 @@ function MovieDetail({ user }) {
 
                 {type === 'tv' && totalEpisodes > 0 && (
                   <p className="episode-progress">
-                    {watchedEpisodeCount}/{totalEpisodes} episodes watched
+                    {watchedEpCount}/{totalEpisodes} episodes watched
                   </p>
                 )}
 
@@ -227,6 +266,7 @@ function MovieDetail({ user }) {
                   <p className="detail-overview">{item.overview}</p>
                 )}
 
+                {/* Crew grid */}
                 <div className="detail-crew-grid">
                   {directors && (
                     <div className="crew-item">
@@ -240,13 +280,13 @@ function MovieDetail({ user }) {
                       <span className="crew-value">{producers}</span>
                     </div>
                   )}
-                  {item.networks && item.networks.length > 0 && (
+                  {item.networks?.length > 0 && (
                     <div className="crew-item">
                       <span className="crew-label">Network</span>
                       <span className="crew-value">{item.networks.map(n => n.name).join(', ')}</span>
                     </div>
                   )}
-                  {item.production_companies && item.production_companies.length > 0 && (
+                  {item.production_companies?.length > 0 && (
                     <div className="crew-item">
                       <span className="crew-label">Studio</span>
                       <span className="crew-value">
@@ -254,7 +294,7 @@ function MovieDetail({ user }) {
                       </span>
                     </div>
                   )}
-                  {item.budget > 0 && (
+                  {item.budget  > 0 && (
                     <div className="crew-item">
                       <span className="crew-label">Budget</span>
                       <span className="crew-value">${item.budget.toLocaleString()}</span>
@@ -280,6 +320,7 @@ function MovieDetail({ user }) {
                   )}
                 </div>
 
+                {/* ── Actions ── */}
                 {user ? (
                   <div className="detail-actions">
                     <div className="action-row">
@@ -304,7 +345,10 @@ function MovieDetail({ user }) {
                           onClick={() => toggleWatched('now')}
                           disabled={loading}
                         >
-                          ✓ Watched{watchedDate && <span className="watched-date-label"> · {watchedDate}</span>}
+                          ✓ Watched
+                          {watchedDate && (
+                            <span className="watched-date-label"> · {watchedDate}</span>
+                          )}
                         </button>
                       )}
 
@@ -315,6 +359,14 @@ function MovieDetail({ user }) {
                         title={watched ? 'Already watched' : ''}
                       >
                         {onWatchlist ? '✓ Watchlist' : '+ Watchlist'}
+                      </button>
+
+                      <button
+                        className="action-btn"
+                        onClick={() => setShowShare(true)}
+                        title="Share"
+                      >
+                        ↗ Share
                       </button>
                     </div>
 
@@ -341,7 +393,8 @@ function MovieDetail({ user }) {
               </div>
             </div>
 
-            {cast && cast.length > 0 && (
+            {/* ── Cast ── */}
+            {cast?.length > 0 && (
               <div className="cast-section">
                 <h2>Cast</h2>
                 <div className="cast-grid">
@@ -364,6 +417,7 @@ function MovieDetail({ user }) {
               </div>
             )}
 
+            {/* ── Where to watch ── */}
             {providers && (providers.flatrate || providers.rent || providers.buy) && (
               <div className="detail-extra-section">
                 <h2>Where to Watch</h2>
@@ -403,6 +457,7 @@ function MovieDetail({ user }) {
               </div>
             )}
 
+            {/* ── Videos ── */}
             {videos.length > 0 && (
               <div className="detail-extra-section">
                 <h2>Videos</h2>
@@ -430,6 +485,7 @@ function MovieDetail({ user }) {
               </div>
             )}
 
+            {/* ── Similar ── */}
             {similar.length > 0 && (
               <div className="detail-extra-section">
                 <h2>Related</h2>
@@ -455,21 +511,20 @@ function MovieDetail({ user }) {
               </div>
             )}
 
+            {/* ── Seasons (multi-season) ── */}
             {type === 'tv' && seasons.length > 1 && (
               <div className="seasons-section">
                 <h2>Seasons</h2>
                 <div className="seasons-grid">
                   {seasons.map(season => {
-                    const seasonWatchedCount = Object.keys(watchedEps).filter(k =>
+                    const seasonWatched = Object.keys(watchedEps).filter(k =>
                       k.includes(`-s${season.season_number}e`)
                     ).length
-                    const seasonComplete = season.episode_count > 0 &&
-                      seasonWatchedCount === season.episode_count
-
+                    const complete = season.episode_count > 0 && seasonWatched === season.episode_count
                     return (
                       <div
                         key={season.season_number}
-                        className={`season-card ${seasonComplete ? 'complete' : ''}`}
+                        className={`season-card ${complete ? 'complete' : ''}`}
                         onClick={() => navigate(`/tv/${id}/season/${season.season_number}`)}
                       >
                         {season.poster_path ? (
@@ -478,10 +533,8 @@ function MovieDetail({ user }) {
                           <div className="no-poster">No Image</div>
                         )}
                         <p className="season-name">{season.name}</p>
-                        <p className="season-progress">
-                          {seasonWatchedCount}/{season.episode_count} eps
-                        </p>
-                        {seasonComplete && <span className="season-complete-badge">✓</span>}
+                        <p className="season-progress">{seasonWatched}/{season.episode_count} eps</p>
+                        {complete && <span className="season-complete-badge">✓</span>}
                       </div>
                     )
                   })}
@@ -489,18 +542,20 @@ function MovieDetail({ user }) {
               </div>
             )}
 
+            {/* ── Episodes link (single-season) ── */}
             {type === 'tv' && seasons.length === 1 && (
               <div className="seasons-section">
                 <h2>Episodes</h2>
                 <p
                   className="season-show-link"
                   onClick={() => navigate(`/tv/${id}/season/${seasons[0].season_number}`)}
-                  style={{ marginBottom: '8px', display: 'inline-block' }}
+                  style={{ marginBottom: 8, display: 'inline-block' }}
                 >
                   View all {seasons[0].episode_count} episodes →
                 </p>
               </div>
             )}
+
           </div>
         </div>
       </div>
