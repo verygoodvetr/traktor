@@ -1,5 +1,55 @@
 const API_KEY = import.meta.env.VITE_TMDB_KEY
 const BASE_URL = 'https://api.themoviedb.org/3'
+const OMDB_KEY = import.meta.env.VITE_OMDB_KEY // optional fallback
+
+export const IMAGE_BASE = 'https://image.tmdb.org/t/p/w300'
+export const IMAGE_BASE_LARGE = 'https://image.tmdb.org/t/p/w780'
+export const IMAGE_BASE_ORIGINAL = 'https://image.tmdb.org/t/p/original'
+
+// ── TVDB helper (uses TMDB's external IDs + TVDB's open metadata) ──────────
+// We use TMDB as the primary source and OMDB as a fallback for episode names/info
+async function getOMDBData(imdbId) {
+  if (!OMDB_KEY || !imdbId) return null
+  try {
+    const res = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDB_KEY}`)
+    return await res.json()
+  } catch { return null }
+}
+
+async function getIMDBId(type, id) {
+  try {
+    const res = await fetch(`${BASE_URL}/${type}/${id}/external_ids?api_key=${API_KEY}`)
+    const data = await res.json()
+    return data.imdb_id || null
+  } catch { return null }
+}
+
+// Enrich episode data with OMDB fallback for missing names/overviews
+export async function enrichEpisodeData(showId, seasonNum, episodeNum, tmdbEp) {
+  // If TMDB already has good data, return it
+  const hasGoodName = tmdbEp.name && tmdbEp.name !== `Episode ${episodeNum}`
+  const hasOverview = tmdbEp.overview && tmdbEp.overview.length > 10
+  if (hasGoodName && hasOverview) return tmdbEp
+
+  // Try OMDB fallback
+  try {
+    const imdbId = await getIMDBId('tv', showId)
+    if (!imdbId || !OMDB_KEY) return tmdbEp
+    const res = await fetch(
+      `https://www.omdbapi.com/?i=${imdbId}&Season=${seasonNum}&Episode=${episodeNum}&apikey=${OMDB_KEY}`
+    )
+    const omdb = await res.json()
+    if (omdb.Response === 'True') {
+      return {
+        ...tmdbEp,
+        name: hasGoodName ? tmdbEp.name : (omdb.Title || tmdbEp.name),
+        overview: hasOverview ? tmdbEp.overview : (omdb.Plot !== 'N/A' ? omdb.Plot : tmdbEp.overview),
+        still_path: tmdbEp.still_path, // always prefer TMDB images
+      }
+    }
+  } catch {}
+  return tmdbEp
+}
 
 export async function searchMedia(query, page = 1) {
   const response = await fetch(
@@ -66,10 +116,12 @@ export async function getPersonDetails(personId) {
 }
 
 export async function getEpisodeDetails(showId, seasonNum, episodeNum) {
-  const response = await fetch(
+  const tmdbRes = await fetch(
     `${BASE_URL}/tv/${showId}/season/${seasonNum}/episode/${episodeNum}?api_key=${API_KEY}&append_to_response=credits`
   )
-  return response.json()
+  const tmdbEp = await tmdbRes.json()
+  // Try to enrich with OMDB if data is sparse
+  return enrichEpisodeData(showId, seasonNum, episodeNum, tmdbEp)
 }
 
 export function getAgeRating(item, type) {
@@ -94,6 +146,21 @@ export function getMediaMeta(item) {
     const episodes = item.number_of_episodes
     if (!seasons) return null
     if (seasons === 1) return episodes ? `${episodes} episodes` : '1 season'
+    return `${seasons} seasons`
+  }
+}
+
+// Returns display meta for Start Watching cards
+export function getStartWatchingMeta(item) {
+  const type = item.media_type || (item.first_air_date ? 'tv' : 'movie')
+  if (type === 'movie') {
+    if (item.runtime) return `${item.runtime} min`
+    return null
+  } else {
+    const seasons = item.number_of_seasons
+    const episodes = item.number_of_episodes
+    if (!seasons && !episodes) return null
+    if (seasons === 1) return episodes ? `${episodes} eps` : '1 season'
     return `${seasons} seasons`
   }
 }
@@ -185,7 +252,3 @@ export async function getPersonalizedRecommendations(watchedItems) {
     .sort((a, b) => b.score - a.score)
     .slice(0, 20)
 }
-
-export const IMAGE_BASE = 'https://image.tmdb.org/t/p/w300'
-export const IMAGE_BASE_LARGE = 'https://image.tmdb.org/t/p/w780'
-export const IMAGE_BASE_ORIGINAL = 'https://image.tmdb.org/t/p/original'

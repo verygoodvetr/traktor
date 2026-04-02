@@ -2,11 +2,13 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getTrending,
-  getDetails, getMediaMeta,
+  getDetails, getMediaMeta, getStartWatchingMeta,
   getPersonalizedRecommendations,
   IMAGE_BASE, IMAGE_BASE_ORIGINAL, IMAGE_BASE_LARGE
 } from '../tmdb'
-import { getUserData, markEpisodeWatched, addToWatched } from '../firestore'
+import { getUserData, markEpisodeWatched, addToWatched, removeFromWatchlist } from '../firestore'
+import { calculateStreak } from '../firestore'
+import { auth } from '../firebase'
 import PageWrapper from '../components/PageWrapper'
 import { CardSkeleton } from '../components/Skeleton'
 import { showToast } from '../components/Toast'
@@ -14,13 +16,23 @@ import { showToast } from '../components/Toast'
 const TMDB_KEY = import.meta.env.VITE_TMDB_KEY
 
 // ─────────────────────────────────────────────────────────
-// ScrollRow
-// Arrows are OUTSIDE the scrollable track (vertical tabs),
-// only shown when there is actual overflow to scroll to.
-// Scrolls 5 cards at a time.
+// Global refresh signal – any quick-watch fires this so all
+// rows re-fetch and the streak widget in App.jsx also updates
+// ─────────────────────────────────────────────────────────
+let _refreshListeners = []
+export function subscribeToRefresh(fn) {
+  _refreshListeners.push(fn)
+  return () => { _refreshListeners = _refreshListeners.filter(l => l !== fn) }
+}
+function broadcastRefresh() {
+  _refreshListeners.forEach(fn => fn())
+}
+
+// ─────────────────────────────────────────────────────────
+// ScrollRow – arrows outside the track
 // ─────────────────────────────────────────────────────────
 function ScrollRow({ children, cardWidth = 180, gap = 14, className = '' }) {
-  const scrollRef   = useRef(null)
+  const scrollRef  = useRef(null)
   const [canLeft,  setCanLeft]  = useState(false)
   const [canRight, setCanRight] = useState(false)
 
@@ -68,26 +80,14 @@ function ScrollRow({ children, cardWidth = 180, gap = 14, className = '' }) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Fill card — encouraging placeholder at end of short lists
-// ─────────────────────────────────────────────────────────
-function FillCard({ message, onClick, aspect = '2/3' }) {
-  return (
-    <div className="fill-card" onClick={onClick} style={{ aspectRatio: aspect }}>
-      <span className="fill-card-icon">＋</span>
-      <p className="fill-card-msg">{message}</p>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────
-// Trakt-style info panel shown on hover (like the screenshot)
+// Trakt-style info panel (expands from the card itself)
 // ─────────────────────────────────────────────────────────
 function InfoPanel({ item, side = 'right' }) {
-  const year    = (item.release_date || item.first_air_date || '').slice(0, 4)
-  const rating  = item.vote_average > 0 ? Math.round(item.vote_average * 10) : null
-  const genres  = (item.genres || []).slice(0, 2).map(g => g.name || g).join(', ')
-  const voteK   = item.vote_count > 0 ? `${(item.vote_count / 1000).toFixed(1)}K` : null
-  const eps     = item.number_of_episodes
+  const year   = (item.release_date || item.first_air_date || '').slice(0, 4)
+  const rating = item.vote_average > 0 ? Math.round(item.vote_average * 10) : null
+  const genres = (item.genres || []).slice(0, 2).map(g => g.name || g).join(', ')
+  const voteK  = item.vote_count > 0 ? `${(item.vote_count / 1000).toFixed(1)}K` : null
+  const eps    = item.number_of_episodes
   const runtime = item.runtime
 
   return (
@@ -125,9 +125,9 @@ function InfoPanel({ item, side = 'right' }) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Standard poster card
+// Standard poster card with consistent quick-watch button
 // ─────────────────────────────────────────────────────────
-function PosterCard({ item, onClick, rank, showQuickWatch, onQuickWatch, isWatched, panelSide = 'right' }) {
+function PosterCard({ item, onClick, rank, onQuickWatch, isWatched, panelSide = 'right' }) {
   return (
     <div className="poster-card" onClick={onClick}>
       <div className="poster-card-img">
@@ -138,10 +138,10 @@ function PosterCard({ item, onClick, rank, showQuickWatch, onQuickWatch, isWatch
         )}
         {isWatched && <div className="poster-watched-overlay">✓</div>}
         {rank != null && <span className="poster-rank">#{rank + 1}</span>}
-        {showQuickWatch && (
+        {onQuickWatch && !isWatched && (
           <button
             className="poster-qw-btn"
-            onClick={e => { e.stopPropagation(); onQuickWatch && onQuickWatch() }}
+            onClick={e => { e.stopPropagation(); onQuickWatch() }}
             title="Mark as watched"
           >✓</button>
         )}
@@ -156,15 +156,12 @@ function PosterCard({ item, onClick, rank, showQuickWatch, onQuickWatch, isWatch
 }
 
 // ─────────────────────────────────────────────────────────
-// Trakt-style Continue Watching card (16/9)
-// No 3-dot button. Quick watch always visible below image.
-// Progress bar fills based on % of show watched.
-// Shows episode still if available, else show backdrop.
+// Trakt Continue Watching card (16/9) — with quick-watch
 // ─────────────────────────────────────────────────────────
 function TraktCard({ item, onQuickWatch }) {
   const navigate = useNavigate()
   const pct       = item.totalEps > 0 ? Math.min(100, (item.watchedCount / item.totalEps) * 100) : 0
-  const remaining = item.totalEps - item.watchedCount
+  const remaining = item.availableToWatch // only available (aired) episodes
 
   function handleClick() {
     if (item.nextEp) {
@@ -182,15 +179,12 @@ function TraktCard({ item, onQuickWatch }) {
 
   return (
     <div className="trakt-card" onClick={handleClick}>
-      {/* Image */}
       <div className="trakt-card-img">
         {imgSrc
           ? <img src={imgSrc} alt={item.showTitle} />
           : <div style={{ width: '100%', height: '100%', background: 'var(--bg4)' }} />
         }
         <div className="trakt-card-overlay" />
-
-        {/* Progress bar + pills inside image at bottom */}
         <div className="trakt-card-bottom">
           <div className="trakt-card-meta-row">
             {item.nextEpRuntime
@@ -198,7 +192,7 @@ function TraktCard({ item, onQuickWatch }) {
               : <span />
             }
             <span className="trakt-pill">
-              {remaining > 0 ? `${remaining} remaining` : 'All caught up'}
+              {remaining > 0 ? `${remaining} to watch` : 'Up to date'}
             </span>
           </div>
           <div className="trakt-progress-bar">
@@ -207,7 +201,6 @@ function TraktCard({ item, onQuickWatch }) {
         </div>
       </div>
 
-      {/* Text + quick-watch below image */}
       <div className="trakt-card-info">
         <div className="trakt-card-text">
           <p className="trakt-card-title">{item.showTitle}</p>
@@ -233,12 +226,13 @@ function TraktCard({ item, onQuickWatch }) {
 // ─────────────────────────────────────────────────────────
 // Continue Watching row
 // ─────────────────────────────────────────────────────────
-function ContinueWatchingRow({ user }) {
+function ContinueWatchingRow({ user, refreshKey }) {
   const [items,   setItems]   = useState([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     if (!user) { setLoading(false); return }
+    setLoading(true)
     const data = await getUserData(user)
     const showIds = new Set()
     Object.values(data.episodes || {}).forEach(ep => showIds.add(ep.showId))
@@ -253,23 +247,25 @@ function ContinueWatchingRow({ user }) {
 
         const showEps = Object.values(data.episodes).filter(e => e.showId === showId)
         let nextEp = null, nextEpRuntime = null, nextEpStill = null
+        let availableToWatch = 0 // count of aired-but-unwatched episodes
 
         for (const season of (details.seasons || []).filter(s => s.season_number > 0)) {
           const sd = await fetch(
             `https://api.themoviedb.org/3/tv/${showId}/season/${season.season_number}?api_key=${TMDB_KEY}`
           ).then(r => r.json())
 
-          const unwatched = (sd.episodes || []).find(ep => {
-            if (data.episodes[`tv-${showId}-s${season.season_number}e${ep.episode_number}`]) return false
-            if (ep.air_date && new Date(ep.air_date) > new Date()) return false
-            return true
-          })
-
-          if (unwatched) {
-            nextEp        = { ...unwatched, seasonNum: season.season_number }
-            nextEpRuntime = unwatched.runtime
-            nextEpStill   = unwatched.still_path || null
-            break
+          for (const ep of (sd.episodes || [])) {
+            // skip future episodes
+            if (ep.air_date && new Date(ep.air_date) > new Date()) continue
+            const isWatched = !!data.episodes[`tv-${showId}-s${season.season_number}e${ep.episode_number}`]
+            if (!isWatched) {
+              availableToWatch++
+              if (!nextEp) {
+                nextEp        = { ...ep, seasonNum: season.season_number }
+                nextEpRuntime = ep.runtime
+                nextEpStill   = ep.still_path || null
+              }
+            }
           }
         }
 
@@ -284,6 +280,7 @@ function ContinueWatchingRow({ user }) {
           poster_path: details.poster_path, backdrop_path: details.backdrop_path,
           nextEp, nextEpRuntime, nextEpStill,
           watchedCount: showEps.length, totalEps,
+          availableToWatch,
           lastWatched: showEps.sort((a, b) => new Date(b.watchedAt) - new Date(a.watchedAt))[0]?.watchedAt
         })
       } catch (e) {}
@@ -293,22 +290,21 @@ function ContinueWatchingRow({ user }) {
     setLoading(false)
   }, [user])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [load, refreshKey])
 
   async function quickWatch(item) {
     if (!item.nextEp) return
     await markEpisodeWatched(user, item.showId, item.nextEp.seasonNum, item.nextEp.episode_number, 'now')
     showToast(`S${item.nextEp.seasonNum} E${item.nextEp.episode_number} marked as watched!`)
-    setLoading(true)
-    await load()
+    broadcastRefresh()
   }
 
   if (loading) return (
-    <div style={{ display: 'flex', gap: 14, overflow: 'hidden' }}>
-      {[...Array(5)].map((_, i) => (
+    <ScrollRow cardWidth={280} gap={14}>
+      {[...Array(4)].map((_, i) => (
         <div key={i} style={{ minWidth: 280, height: 220, background: 'var(--bg3)', borderRadius: 10, flexShrink: 0 }} />
       ))}
-    </div>
+    </ScrollRow>
   )
 
   if (items.length === 0) return (
@@ -320,62 +316,67 @@ function ContinueWatchingRow({ user }) {
       {items.map(item => (
         <TraktCard key={item.showId} item={item} onQuickWatch={quickWatch} />
       ))}
-      {items.length < 5 && (
-        <FillCard message="Keep watching shows to fill your queue" onClick={() => {}} aspect="16/9" />
-      )}
     </ScrollRow>
   )
 }
 
 // ─────────────────────────────────────────────────────────
-// Start Watching card (ranked, with episode thumb for TV)
+// Start Watching card — always horizontal backdrop image
 // ─────────────────────────────────────────────────────────
 function StartWatchingCard({ item, rank, onQuickWatch }) {
   const navigate = useNavigate()
   const type     = item.media_type || (item.first_air_date ? 'tv' : 'movie')
 
-  const isTV     = type === 'tv'
-  const imgSrc   = isTV && item.firstEpStill
-    ? IMAGE_BASE_LARGE + item.firstEpStill
+  // Always use backdrop (horizontal) image
+  const imgSrc = item.backdrop_path
+    ? IMAGE_BASE_ORIGINAL + item.backdrop_path
     : item.poster_path
     ? IMAGE_BASE + item.poster_path
     : null
-  const imgAspect = isTV && item.firstEpStill ? '16/9' : '2/3'
+  const imgAspect = '16/9'
+
+  const meta = getStartWatchingMeta({ ...item, media_type: type })
 
   function handleClick() {
-    if (isTV && item.firstEpStill) {
-      navigate(`/tv/${item.id}/season/1/episode/1`)
-    } else {
-      navigate(`/movie/${type}/${item.id}`)
-    }
+    navigate(`/movie/${type}/${item.id}`)
   }
 
   return (
-    <div className="start-card-v2" style={{ '--img-aspect': imgAspect }} onClick={handleClick}>
-      <div className="start-card-v2-img" style={{ aspectRatio: imgAspect }}>
+    <div
+      className="start-card-v2"
+      style={{ minWidth: 240, maxWidth: 240 }}
+      onClick={handleClick}
+    >
+      <div className="start-card-v2-img" style={{ aspectRatio: imgAspect, position: 'relative', overflow: 'hidden', borderRadius: 'var(--radius)', background: 'var(--bg3)' }}>
         {imgSrc
-          ? <img src={imgSrc} alt={item.title || item.name} />
+          ? <img src={imgSrc} alt={item.title || item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.3s ease' }} />
           : <div className="no-poster">No Image</div>
         }
-        {/* Rank badge — bottom left over image */}
-        <span className="poster-rank">#{rank + 1}</span>
-        {/* Quick watch — bottom right over image, always visible */}
+        {/* Gradient overlay so text is readable */}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.75) 100%)', pointerEvents: 'none' }} />
+        {/* Rank badge */}
+        <span className="poster-rank" style={{ zIndex: 2 }}>#{rank + 1}</span>
+        {/* Meta pill bottom-left */}
+        {meta && (
+          <span className="trakt-pill" style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 2 }}>{meta}</span>
+        )}
+        {/* Quick watch bottom-right — always visible */}
         <button
-          className="poster-qw-btn poster-qw-visible"
+          className="trakt-qw-btn"
+          style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 2, opacity: 1 }}
           onClick={e => { e.stopPropagation(); onQuickWatch(item, type) }}
-          title={isTV ? 'Watch S1 E1' : 'Mark as watched'}
+          title={type === 'tv' ? 'Watch S1 E1' : 'Mark as watched'}
         >▶</button>
       </div>
       <div className="poster-card-info">
         <p className="poster-card-title">{item.title || item.name}</p>
         <p className="poster-card-year">{(item.release_date || item.first_air_date || '').slice(0, 4)}</p>
       </div>
-      <InfoPanel item={item} side="right" />
     </div>
   )
 }
 
-function StartWatchingRow({ items, user, onQuickWatch }) {
+function StartWatchingRow({ items, user, onQuickWatch, refreshKey }) {
   const navigate = useNavigate()
 
   const scored = items
@@ -398,7 +399,7 @@ function StartWatchingRow({ items, user, onQuickWatch }) {
   )
 
   return (
-    <ScrollRow cardWidth={160} gap={14}>
+    <ScrollRow cardWidth={240} gap={14}>
       {scored.map((item, i) => (
         <StartWatchingCard
           key={`${item.media_type}-${item.id}`}
@@ -407,21 +408,27 @@ function StartWatchingRow({ items, user, onQuickWatch }) {
           onQuickWatch={onQuickWatch}
         />
       ))}
-      {scored.length < 5 && (
-        <FillCard
-          message="Add more to your watchlist"
-          onClick={() => navigate('/search')}
-          aspect="2/3"
-        />
-      )}
     </ScrollRow>
   )
 }
 
 // ─────────────────────────────────────────────────────────
+// Format time in 12h or 24h
+// ─────────────────────────────────────────────────────────
+function formatAirTime(dateStr, use12h) {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  if (isNaN(d)) return null
+  if (use12h) {
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  }
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+// ─────────────────────────────────────────────────────────
 // Upcoming row
 // ─────────────────────────────────────────────────────────
-function UpcomingRow({ user }) {
+function UpcomingRow({ user, use12hClock }) {
   const [items, setItems] = useState([])
   const navigate = useNavigate()
 
@@ -469,12 +476,23 @@ function UpcomingRow({ user }) {
     })
   }, [user])
 
-  function formatDate(date) {
-    const diff = Math.ceil((date - new Date()) / (1000 * 60 * 60 * 24))
-    if (diff === 0) return 'Today'
-    if (diff === 1) return 'Tomorrow'
-    if (diff <= 7)  return `In ${diff} days`
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  function formatDate(item) {
+    const date = item.airDate
+    const now = new Date()
+    const diff = Math.ceil((date - now) / (1000 * 60 * 60 * 24))
+    const timeStr = !item.isMovie ? formatAirTime(item.nextEp?.air_date, use12hClock) : null
+
+    let label
+    if (diff === 0) {
+      label = timeStr ? `Today (${timeStr})` : 'Today'
+    } else if (diff === 1) {
+      label = 'Tomorrow'
+    } else if (diff <= 7) {
+      label = `In ${diff} days`
+    } else {
+      label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }
+    return label
   }
 
   if (items.length === 0) return (
@@ -495,7 +513,7 @@ function UpcomingRow({ user }) {
           }
           <div className="schedule-card-info">
             <p className="schedule-card-title">{item.title}</p>
-            <p className="schedule-card-date">{formatDate(item.airDate)}</p>
+            <p className="schedule-card-date">{formatDate(item)}</p>
             <p className="schedule-card-sub">
               {item.isMovie ? 'Movie release' : item.nextEp
                 ? `S${item.nextEp.season_number} E${item.nextEp.episode_number}`
@@ -504,31 +522,40 @@ function UpcomingRow({ user }) {
           </div>
         </div>
       ))}
-      {items.length < 5 && (
-        <FillCard message="Watch more shows to see upcoming episodes" onClick={() => {}} aspect="16/9" />
-      )}
     </ScrollRow>
   )
 }
 
 // ─────────────────────────────────────────────────────────
-// Recommended row
+// Recommended row — with consistent quick-watch
 // ─────────────────────────────────────────────────────────
-function RecommendedRow({ user }) {
+function RecommendedRow({ user, refreshKey }) {
   const [items,   setItems]   = useState([])
+  const [watched, setWatched] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!user) { setLoading(false); return }
-    getUserData(user).then(async data => {
-      const watched = Object.values(data.watched || {})
-      if (watched.length === 0) { setLoading(false); return }
-      const recs = await getPersonalizedRecommendations(watched)
-      setItems(recs)
-      setLoading(false)
-    })
+    const data = await getUserData(user)
+    const w = Object.values(data.watched || {})
+    setWatched(new Set(Object.keys(data.watched || {})))
+    if (w.length === 0) { setLoading(false); return }
+    const recs = await getPersonalizedRecommendations(w)
+    setItems(recs)
+    setLoading(false)
   }, [user])
+
+  useEffect(() => { load() }, [load, refreshKey])
+
+  async function quickWatch(item) {
+    const type = item.media_type || 'movie'
+    await addToWatched(user, { ...item, media_type: type }, 'now')
+    // remove from watchlist if present
+    await removeFromWatchlist(user, { ...item, media_type: type }).catch(() => {})
+    showToast(`${item.title || item.name} marked as watched!`)
+    broadcastRefresh()
+  }
 
   if (loading) return null
 
@@ -540,78 +567,78 @@ function RecommendedRow({ user }) {
     <ScrollRow cardWidth={160} gap={14}>
       {items.map(item => {
         const type = item.media_type || 'movie'
+        const key  = `${type}-${item.id}`
         return (
           <PosterCard
-            key={`${type}-${item.id}`}
+            key={key}
             item={{ ...item, media_type: type }}
             onClick={() => navigate(`/movie/${type}/${item.id}`)}
+            isWatched={watched.has(key)}
+            onQuickWatch={() => quickWatch(item)}
           />
         )
       })}
-      {items.length < 5 && (
-        <FillCard message="Watch more to unlock better recommendations" onClick={() => {}} aspect="2/3" />
-      )}
     </ScrollRow>
   )
 }
 
 // ─────────────────────────────────────────────────────────
-// Recently Watched row
+// Recently Watched row — Trakt-style 16/9 cards, no quick-watch
 // ─────────────────────────────────────────────────────────
-function HistoryRow({ user }) {
+function HistoryRow({ user, refreshKey }) {
   const [items,   setItems]   = useState([])
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!user) { setLoading(false); return }
-    getUserData(user).then(async data => {
-      const history = []
+    const data = await getUserData(user)
+    const history = []
 
-      Object.values(data.watched || {}).forEach(w => {
-        if (w.media_type === 'movie' && w.watchedAt)
-          history.push({ ...w, historyType: 'movie', sortDate: new Date(w.watchedAt) })
-      })
-
-      Object.entries(data.episodes || {}).forEach(([, ep]) => {
-        if (ep.watchedAt)
-          history.push({ ...ep, historyType: 'episode', sortDate: new Date(ep.watchedAt) })
-      })
-
-      history.sort((a, b) => b.sortDate - a.sortDate)
-
-      const enriched = []
-      for (const h of history.slice(0, 20)) {
-        try {
-          if (h.historyType === 'movie') {
-            const d = await getDetails('movie', h.id)
-            enriched.push({ ...h, title: d.title, backdrop_path: d.backdrop_path, poster_path: d.poster_path })
-          } else {
-            const d  = await getDetails('tv', h.showId)
-            const ep = await fetch(
-              `https://api.themoviedb.org/3/tv/${h.showId}/season/${h.seasonNum}/episode/${h.episodeNum}?api_key=${TMDB_KEY}`
-            ).then(r => r.json())
-            enriched.push({
-              ...h, title: d.name, epName: ep.name,
-              backdrop_path: ep.still_path || d.backdrop_path,
-              poster_path: d.poster_path,
-              epLabel: `S${h.seasonNum} E${h.episodeNum}`,
-            })
-          }
-        } catch (e) {}
-      }
-      setItems(enriched)
-      setLoading(false)
+    Object.values(data.watched || {}).forEach(w => {
+      if (w.media_type === 'movie' && w.watchedAt)
+        history.push({ ...w, historyType: 'movie', sortDate: new Date(w.watchedAt) })
     })
+
+    Object.entries(data.episodes || {}).forEach(([, ep]) => {
+      if (ep.watchedAt)
+        history.push({ ...ep, historyType: 'episode', sortDate: new Date(ep.watchedAt) })
+    })
+
+    history.sort((a, b) => b.sortDate - a.sortDate)
+
+    const enriched = []
+    for (const h of history.slice(0, 20)) {
+      try {
+        if (h.historyType === 'movie') {
+          const d = await getDetails('movie', h.id)
+          enriched.push({ ...h, title: d.title, backdrop_path: d.backdrop_path, poster_path: d.poster_path })
+        } else {
+          const d  = await getDetails('tv', h.showId)
+          const ep = await fetch(
+            `https://api.themoviedb.org/3/tv/${h.showId}/season/${h.seasonNum}/episode/${h.episodeNum}?api_key=${TMDB_KEY}`
+          ).then(r => r.json())
+          enriched.push({
+            ...h, title: d.name, epName: ep.name,
+            backdrop_path: ep.still_path || d.backdrop_path,
+            poster_path: d.poster_path,
+            epLabel: `S${h.seasonNum} E${h.episodeNum}`,
+          })
+        }
+      } catch (e) {}
+    }
+    setItems(enriched)
+    setLoading(false)
   }, [user])
 
-  if (loading) return null
+  useEffect(() => { load() }, [load, refreshKey] )
 
+  if (loading) return null
   if (items.length === 0) return (
     <p className="row-empty-msg">Your watch history will appear here once you start marking things as watched.</p>
   )
 
-  function fmt(date) {
+  function fmtAgo(date) {
     const diff = Math.floor((Date.now() - date) / 86400000)
     if (diff === 0) return 'Today'
     if (diff === 1) return 'Yesterday'
@@ -620,34 +647,42 @@ function HistoryRow({ user }) {
   }
 
   return (
-    <ScrollRow cardWidth={180} gap={14}>
+    <ScrollRow cardWidth={280} gap={14}>
       {items.map((item, i) => (
         <div
-          className="history-card"
+          className="trakt-card"
           key={`${item.historyType}-${item.id || item.showId}-${i}`}
           onClick={() => {
             if (item.historyType === 'movie') navigate(`/movie/movie/${item.id}`)
             else navigate(`/tv/${item.showId}/season/${item.seasonNum}/episode/${item.episodeNum}`)
           }}
+          style={{ cursor: 'pointer' }}
         >
-          <div className="history-card-img">
+          <div className="trakt-card-img">
             {item.backdrop_path
-              ? <img src={IMAGE_BASE + item.backdrop_path} alt={item.title} />
+              ? <img src={IMAGE_BASE + item.backdrop_path} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               : <div style={{ width: '100%', height: '100%', background: 'var(--bg4)' }} />
             }
-            <span className="history-card-date">{fmt(item.sortDate)}</span>
+            <div className="trakt-card-overlay" />
+            {/* "when watched" pill at bottom-right, like duration in continue watching */}
+            <div className="trakt-card-bottom">
+              <div className="trakt-card-meta-row">
+                <span />
+                <span className="trakt-pill">{fmtAgo(item.sortDate)}</span>
+              </div>
+            </div>
           </div>
-          <div className="history-card-info">
-            <p className="history-card-title">{item.title}</p>
-            {item.epLabel && (
-              <p className="history-card-ep">{item.epLabel}{item.epName ? ` · ${item.epName}` : ''}</p>
-            )}
+          <div className="trakt-card-info">
+            <div className="trakt-card-text">
+              <p className="trakt-card-title">{item.title}</p>
+              {item.epLabel && (
+                <p className="trakt-card-sub">{item.epLabel}{item.epName ? ` — ${item.epName}` : ''}</p>
+              )}
+            </div>
+            {/* No quick-watch button for history */}
           </div>
         </div>
       ))}
-      {items.length < 8 && (
-        <FillCard message="Keep watching to build your history" onClick={() => {}} aspect="16/9" />
-      )}
     </ScrollRow>
   )
 }
@@ -707,7 +742,19 @@ function LandingPage({ onSignIn }) {
 // ─────────────────────────────────────────────────────────
 function Home({ user, onSignIn }) {
   const [watchlistItems, setWatchlistItems] = useState([])
+  const [refreshKey,     setRefreshKey]     = useState(0)
+  // Load 12h clock preference from localStorage
+  const [use12hClock] = useState(() => {
+    try { return localStorage.getItem('traktor_12h') === 'true' } catch { return false }
+  })
 
+  // Subscribe to global refresh broadcasts
+  useEffect(() => {
+    const unsub = subscribeToRefresh(() => setRefreshKey(k => k + 1))
+    return unsub
+  }, [])
+
+  // Reload watchlist when refreshKey changes
   useEffect(() => {
     if (!user) return
     getUserData(user).then(async data => {
@@ -718,21 +765,12 @@ function Home({ user, onSignIn }) {
       for (const item of wl.slice(0, 20)) {
         try {
           const d = await getDetails(item.media_type, item.id)
-          let firstEpStill = null
-          if (item.media_type === 'tv') {
-            try {
-              const ep = await fetch(
-                `https://api.themoviedb.org/3/tv/${item.id}/season/1/episode/1?api_key=${TMDB_KEY}`
-              ).then(r => r.json())
-              firstEpStill = ep.still_path || null
-            } catch (e) {}
-          }
-          enriched.push({ ...item, ...d, firstEpStill })
+          enriched.push({ ...item, ...d })
         } catch (e) { enriched.push(item) }
       }
       setWatchlistItems(enriched)
     })
-  }, [user])
+  }, [user, refreshKey])
 
   async function handleQuickWatch(item, type) {
     if (!user) return
@@ -743,6 +781,9 @@ function Home({ user, onSignIn }) {
       await addToWatched(user, { ...item, media_type: type }, 'now')
       showToast(`${item.title || item.name} marked as watched!`)
     }
+    // Always remove from watchlist on quick-watch
+    await removeFromWatchlist(user, { ...item, media_type: type }).catch(() => {})
+    broadcastRefresh()
   }
 
   if (!user) return <LandingPage onSignIn={onSignIn} />
@@ -756,7 +797,7 @@ function Home({ user, onSignIn }) {
             <div className="home-section-header">
               <h2 className="home-section-title">Continue Watching</h2>
             </div>
-            <ContinueWatchingRow user={user} />
+            <ContinueWatchingRow user={user} refreshKey={refreshKey} />
           </div>
 
           <div className="home-section">
@@ -764,7 +805,12 @@ function Home({ user, onSignIn }) {
               <h2 className="home-section-title">Start Watching</h2>
               <span className="home-section-sub">From your watchlist</span>
             </div>
-            <StartWatchingRow items={watchlistItems} user={user} onQuickWatch={handleQuickWatch} />
+            <StartWatchingRow
+              items={watchlistItems}
+              user={user}
+              onQuickWatch={handleQuickWatch}
+              refreshKey={refreshKey}
+            />
           </div>
 
           <div className="home-section">
@@ -772,7 +818,7 @@ function Home({ user, onSignIn }) {
               <h2 className="home-section-title">Upcoming Schedule</h2>
               <span className="home-section-sub">New episodes and releases</span>
             </div>
-            <UpcomingRow user={user} />
+            <UpcomingRow user={user} use12hClock={use12hClock} />
           </div>
 
           <div className="home-section">
@@ -780,14 +826,14 @@ function Home({ user, onSignIn }) {
               <h2 className="home-section-title">Recommended for You</h2>
               <span className="home-section-sub">Based on your watch history</span>
             </div>
-            <RecommendedRow user={user} />
+            <RecommendedRow user={user} refreshKey={refreshKey} />
           </div>
 
           <div className="home-section">
             <div className="home-section-header">
               <h2 className="home-section-title">Recently Watched</h2>
             </div>
-            <HistoryRow user={user} />
+            <HistoryRow user={user} refreshKey={refreshKey} />
           </div>
 
         </div>

@@ -33,6 +33,9 @@ function Settings({ user }) {
     watchlist:       true,
     episodeProgress: true,
   })
+  const [use12hClock, setUse12hClock] = useState(() => {
+    try { return localStorage.getItem('traktor_12h') === 'true' } catch { return false }
+  })
 
   const privacyTimer = useRef(null)
   const navigate = useNavigate()
@@ -55,13 +58,20 @@ function Settings({ user }) {
 
   /* ── Auto-save privacy settings ── */
   useEffect(() => {
-    if (!profile) return               // don't fire on first load
+    if (!profile) return
     clearTimeout(privacyTimer.current)
     privacyTimer.current = setTimeout(async () => {
       await updateUserProfile(user.uid, { isPrivate, visibleFields })
     }, 800)
     return () => clearTimeout(privacyTimer.current)
   }, [isPrivate, visibleFields]) // eslint-disable-line
+
+  /* ── 12h clock toggle ── */
+  function toggle12hClock(val) {
+    setUse12hClock(val)
+    try { localStorage.setItem('traktor_12h', val ? 'true' : 'false') } catch {}
+    showToast(`Switched to ${val ? '12-hour' : '24-hour'} clock`)
+  }
 
   /* ── Linked accounts ── */
   async function linkProvider(provider, providerId) {
@@ -160,21 +170,7 @@ function Settings({ user }) {
           title: i.title, media_type: i.media_type, id: i.id, rating: i.rating,
         })), null, 2
       ))
-      zip.file('README.txt', `Traktor Data Export
-===================
-Exported: ${new Date().toLocaleString()}
-Account:  ${data.profile.displayName} (${data.profile.email})
-
-Files included:
-- profile.json           Your account info and settings
-- watched-movies.json    Movies you have marked as watched
-- watched-shows.json     TV shows you have marked as watched
-- watchlist-movies.json  Movies on your watchlist
-- watchlist-shows.json   TV shows on your watchlist
-- episodes.json          Individual episode watch history
-- ratings.json           All your ratings in one place
-
-For questions: traktorapp@gmail.com`)
+      zip.file('README.txt', `Traktor Data Export\n===================\nExported: ${new Date().toLocaleString()}\nAccount:  ${data.profile.displayName} (${data.profile.email})\n`)
 
       const blob = await zip.generateAsync({ type: 'blob' })
       const url  = URL.createObjectURL(blob)
@@ -236,11 +232,8 @@ For questions: traktorapp@gmail.com`)
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Username */}
               <div>
-                <label style={{ fontSize: 13, opacity: 0.6, marginBottom: 6, display: 'block' }}>
-                  Username
-                </label>
+                <label style={{ fontSize: 13, opacity: 0.6, marginBottom: 6, display: 'block' }}>Username</label>
                 <div className="username-row">
                   <span className="username-at">@</span>
                   <input
@@ -266,11 +259,8 @@ For questions: traktorapp@gmail.com`)
                 </p>
               </div>
 
-              {/* Display name */}
               <div>
-                <label style={{ fontSize: 13, opacity: 0.6, marginBottom: 6, display: 'block' }}>
-                  Display name
-                </label>
+                <label style={{ fontSize: 13, opacity: 0.6, marginBottom: 6, display: 'block' }}>Display name</label>
                 <div className="username-row">
                   <input
                     type="text"
@@ -280,15 +270,31 @@ For questions: traktorapp@gmail.com`)
                     maxLength={40}
                     style={{ flex: 1 }}
                   />
-                  <button
-                    className="action-btn"
-                    onClick={saveDisplayName}
-                    disabled={savingUsername}
-                  >
-                    Save
-                  </button>
+                  <button className="action-btn" onClick={saveDisplayName} disabled={savingUsername}>Save</button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* ── Display preferences ── */}
+          <div className="settings-section">
+            <h2>Display</h2>
+            <p className="settings-desc">
+              Adjust how time is shown across the app (e.g. upcoming episode air times).
+            </p>
+            <div className="privacy-row">
+              <div>
+                <p className="privacy-label">Time format</p>
+                <p className="privacy-desc">{use12hClock ? '12-hour (e.g. 4:00 PM)' : '24-hour (e.g. 16:00)'}</p>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={use12hClock}
+                  onChange={e => toggle12hClock(e.target.checked)}
+                />
+                <span className="toggle-slider" />
+              </label>
             </div>
           </div>
 
@@ -296,8 +302,7 @@ For questions: traktorapp@gmail.com`)
           <div className="settings-section">
             <h2>Privacy</h2>
             <p className="settings-desc">
-              Control who can see your profile and what they can see.
-              Settings save automatically.
+              Control who can see your profile and what they can see. Settings save automatically.
             </p>
 
             <div className="privacy-row">
@@ -306,11 +311,7 @@ For questions: traktorapp@gmail.com`)
                 <p className="privacy-desc">Only you can see your profile</p>
               </div>
               <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={isPrivate}
-                  onChange={e => setIsPrivate(e.target.checked)}
-                />
+                <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />
                 <span className="toggle-slider" />
               </label>
             </div>
@@ -348,7 +349,6 @@ For questions: traktorapp@gmail.com`)
             <p className="settings-desc">
               Link multiple accounts so you can sign in with either one.
             </p>
-
             <div className="provider-row">
               <span>Google</span>
               {googleLinked
@@ -356,7 +356,6 @@ For questions: traktorapp@gmail.com`)
                 : <button className="action-btn" onClick={() => linkProvider(googleProvider, 'google.com')}>Link Google</button>
               }
             </div>
-
             <div className="provider-row">
               <span>Microsoft</span>
               {microsoftLinked
@@ -369,9 +368,7 @@ For questions: traktorapp@gmail.com`)
           {/* ── Export ── */}
           <div className="settings-section">
             <h2>Export your data</h2>
-            <p className="settings-desc">
-              Download a copy of all your Traktor data as a ZIP file.
-            </p>
+            <p className="settings-desc">Download a copy of all your Traktor data as a ZIP file.</p>
             <button className="action-btn" onClick={handleExport} disabled={exporting}>
               {exporting ? 'Preparing export…' : 'Export my data'}
             </button>
@@ -410,10 +407,7 @@ For questions: traktorapp@gmail.com`)
                       <button className="danger-btn" onClick={() => setDeleteStep(2)}>
                         I understand, continue
                       </button>
-                      <button
-                        className="unlink-btn"
-                        onClick={() => { setShowDeleteFlow(false); setDeleteStep(1) }}
-                      >
+                      <button className="unlink-btn" onClick={() => { setShowDeleteFlow(false); setDeleteStep(1) }}>
                         Cancel
                       </button>
                     </div>
@@ -442,14 +436,7 @@ For questions: traktorapp@gmail.com`)
                       >
                         {deleting ? 'Deleting…' : 'Permanently delete my account'}
                       </button>
-                      <button
-                        className="unlink-btn"
-                        onClick={() => {
-                          setShowDeleteFlow(false)
-                          setDeleteStep(1)
-                          setConfirmText('')
-                        }}
-                      >
+                      <button className="unlink-btn" onClick={() => { setShowDeleteFlow(false); setDeleteStep(1); setConfirmText('') }}>
                         Cancel
                       </button>
                     </div>
