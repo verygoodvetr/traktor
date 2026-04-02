@@ -283,6 +283,14 @@ input[type="time"] { width: auto; }
   padding: 16px 0;
 }
 
+/* ── Empty row message ── */
+.row-empty-msg {
+  font-size: 14px;
+  color: var(--text4);
+  padding: 20px 0 8px;
+  font-style: italic;
+}
+
 /* ── Media cards (poster style) ── */
 .results-grid {
   display: grid;
@@ -290,19 +298,37 @@ input[type="time"] { width: auto; }
   gap: 20px;
 }
 
-/* ── Card hover expand (replace old .media-card:hover) ── */
+/* ── Media card — scale on hover, NO translateY ── */
 .media-card {
   display: flex;
   flex-direction: column;
   gap: 8px;
   cursor: pointer;
   position: relative;
-  transition: transform 0.2s ease;
+  /* Use outline-offset trick so the visual size doesn't shift */
   z-index: 1;
+  /* No transform here — scale is applied only via .media-card-img-wrap img */
 }
 
 .media-card:hover {
   z-index: 50;
+}
+
+/* Only scale the image, not the whole card — prevents layout shift / border jump */
+.media-card-img-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--bg3);
+  aspect-ratio: 2/3;
+}
+
+.media-card-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s ease;
 }
 
 .media-card:hover .media-card-img-wrap img {
@@ -373,60 +399,135 @@ input[type="time"] { width: auto; }
 
 .card-hover-quick:hover { background: var(--red-hover); }
 
-/* ── Row arrows — repositioned ── */
-.row-arrow {
-  position: absolute;
-  top: 35%;
-  transform: translateY(-50%);
-  background: rgba(0,0,0,0.9);
-  color: #fff;
-  border: 1px solid var(--border2);
-  font-size: 18px;
+
+/* ── Empty row message ── */
+.row-empty-msg {
+  font-size: 14px;
+  color: var(--text4);
+  padding: 20px 0 8px;
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCROLL ROW — arrows outside the track, vertical tab style
+   ═══════════════════════════════════════════════════════════ */
+
+.scroll-row-outer {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+}
+
+.row-scroll {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.row-scroll::-webkit-scrollbar { display: none; }
+
+/* Vertical rectangle arrow tabs — sit completely outside the scroll track */
+.scroll-arrow {
+  flex-shrink: 0;
   width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text4);
+  font-size: 20px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s;
-  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  /* Hidden by default — pointer events disabled, fully transparent */
+  opacity: 0;
+  pointer-events: none;
+  /* Keep layout space so scrollable area doesn't jump */
+}
+
+.scroll-arrow.visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.scroll-arrow:hover {
+  background: var(--bg4);
+  color: var(--text);
+  border-color: var(--border2);
+}
+
+.scroll-arrow-left  { border-radius: var(--radius-sm) 0 0 var(--radius-sm); margin-right: 6px; }
+.scroll-arrow-right { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin-left: 6px; }
+
+/* Remove old row-wrap / row-arrow styles in favour of above */
+.row-wrap { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════════
+   FILL CARD — encouraging placeholder
+   ═══════════════════════════════════════════════════════════ */
+
+.fill-card {
   flex-shrink: 0;
-  padding: 0;
+  min-width: 160px;
+  background: var(--bg3);
+  border: 2px dashed var(--border2);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px 14px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  text-align: center;
+}
+
+.fill-card:hover {
+  border-color: rgba(229,9,20,0.4);
+  background: rgba(229,9,20,0.04);
+}
+
+.fill-card-icon {
+  font-size: 28px;
+  color: var(--text4);
   line-height: 1;
 }
 
-.row-arrow.visible { opacity: 1; }
-.row-arrow-left { left: 4px; }
-.row-arrow-right { right: 4px; }
-
-/* ── Home page wider margin ── */
-.home-rows {
-  padding: 24px 64px 48px;
+.fill-card-msg {
+  font-size: 12px;
+  color: var(--text4);
+  line-height: 1.5;
+  max-width: 120px;
 }
 
-/* ── Start Watching card (poster with 1 line title + meta) ── */
-.start-card {
-  min-width: 140px;
-  max-width: 140px;
+/* ═══════════════════════════════════════════════════════════
+   POSTER CARD — standard 2/3 card with hover info panel
+   ═══════════════════════════════════════════════════════════ */
+
+.poster-card {
   flex-shrink: 0;
+  min-width: 160px;
+  max-width: 160px;
   cursor: pointer;
   position: relative;
-  z-index: 1;
+  /* Cards do NOT move up — only image scales */
 }
 
-.start-card:hover { z-index: 50; }
-
-.start-card-img {
+.poster-card-img {
   position: relative;
-  border-radius: var(--radius);
   overflow: hidden;
-  aspect-ratio: 2/3;
+  border-radius: var(--radius);
   background: var(--bg3);
+  aspect-ratio: 2/3;
 }
 
-.start-card-img img {
+.poster-card-img img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -435,315 +536,370 @@ input[type="time"] { width: auto; }
   transition: transform 0.3s ease;
 }
 
-.start-card:hover .start-card-img img { transform: scale(1.05); }
-
-.start-card-info {
-  padding: 6px 2px 0;
+.poster-card:hover .poster-card-img img {
+  transform: scale(1.05);
 }
 
-.start-card-title {
+.poster-watched-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: #4ade80;
+}
+
+/* Rank badge — bottom left on image */
+.poster-rank {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  letter-spacing: 0.03em;
+}
+
+/* Quick-watch btn — bottom right on image, hidden until hover (or .poster-qw-visible) */
+.poster-qw-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(229,9,20,0.85);
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.15s, transform 0.1s;
+  backdrop-filter: blur(4px);
+}
+
+.poster-card:hover .poster-qw-btn,
+.start-card-v2:hover .poster-qw-btn,
+.poster-qw-btn.poster-qw-visible {
+  opacity: 1;
+}
+
+.poster-qw-btn:hover {
+  background: var(--red-hover) !important;
+  transform: scale(1.1);
+}
+
+.poster-card-info {
+  padding: 7px 2px 0;
+}
+
+.poster-card-title {
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
-.start-card-meta {
+.poster-card-year {
   font-size: 11px;
   color: var(--text3);
   margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* ── Continue Watching — Trakt style (all info inside image) ── */
-.backdrop-card {
-  cursor: pointer;
+/* ═══════════════════════════════════════════════════════════
+   INFO PANEL — Trakt-style popup on hover
+   ═══════════════════════════════════════════════════════════ */
+
+.info-panel {
+  position: absolute;
+  top: 0;
+  width: 260px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
   border-radius: var(--radius-lg);
+  padding: 0;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.75);
+  z-index: 200;
+  display: none;
   overflow: hidden;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  transition: transform 0.2s ease, border-color 0.2s;
+  pointer-events: none;
+}
+
+.info-panel-right { left: calc(100% + 10px); }
+.info-panel-left  { right: calc(100% + 10px); }
+
+/* Show on parent hover */
+.poster-card:hover .info-panel,
+.start-card-v2:hover .info-panel {
+  display: flex;
+}
+
+.info-panel-poster {
+  width: 90px;
+  min-width: 90px;
+  object-fit: cover;
+  display: block;
+  border-radius: 0;
+}
+
+.info-panel-body {
+  flex: 1;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.info-panel-top {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.info-panel-dots {
+  color: var(--text3);
+  font-size: 14px;
+  letter-spacing: 2px;
+  line-height: 1;
+}
+
+.info-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+  /* Allow wrapping */
+  word-break: break-word;
+}
+
+.info-panel-genre {
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.info-panel-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  margin-top: 2px;
+}
+
+.info-panel-stat {
+  font-size: 12px;
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.info-stat-icon {
+  color: var(--text4);
+  font-size: 11px;
+}
+
+.info-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.info-panel-wl {
+  font-size: 16px;
+  color: var(--text3);
+}
+
+.info-panel-rating {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c084fc;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.info-star {
+  color: #c084fc;
+  font-size: 14px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TRAKT CONTINUE WATCHING CARD
+   ═══════════════════════════════════════════════════════════ */
+
+.trakt-card {
+  flex-shrink: 0;
   min-width: 280px;
   max-width: 280px;
-  flex-shrink: 0;
+  cursor: pointer;
 }
 
-.backdrop-card:hover {
-  transform: scale(1.03);
-  border-color: var(--border2);
-}
-
-/* The image container — all info overlaid inside */
-.backdrop-card-img {
+.trakt-card-img {
   position: relative;
   width: 100%;
   aspect-ratio: 16/9;
   overflow: hidden;
+  border-radius: 10px;
   background: var(--bg4);
 }
 
-.backdrop-card-img img {
+.trakt-card-img img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center top;
   display: block;
   transition: transform 0.3s ease;
 }
 
-.backdrop-card:hover .backdrop-card-img img {
+.trakt-card:hover .trakt-card-img img {
   transform: scale(1.04);
 }
 
-/* Dark gradient at bottom of image for legibility */
-.backdrop-card-overlay {
+.trakt-card-overlay {
   position: absolute;
   inset: 0;
   background: linear-gradient(
-    to top,
-    rgba(0,0,0,0.92) 0%,
-    rgba(0,0,0,0.5)  35%,
-    transparent       65%
+    to bottom,
+    rgba(0,0,0,0) 40%,
+    rgba(0,0,0,0.8) 100%
   );
   pointer-events: none;
 }
 
-/* ── Bottom info row (inside image) ── */
-.backdrop-card-bottom {
+.trakt-card-bottom {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 10px 10px 0;
+  padding: 0 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 
-/* Row: episode badge + runtime on left, remaining + total time on right */
-.backdrop-card-info-row {
+.trakt-card-meta-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
 }
 
-.backdrop-card-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.backdrop-card-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  font-size: 12px;
-  color: rgba(255,255,255,0.7);
-  white-space: nowrap;
-}
-
-.backdrop-card-ep {
+.trakt-pill {
   font-size: 11px;
-  font-weight: 700;
-  color: #fff;
-  background: rgba(229,9,20,0.9);
-  padding: 2px 7px;
-  border-radius: 3px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.backdrop-ep-runtime {
-  font-size: 12px;
-  color: rgba(255,255,255,0.75);
-  background: rgba(0,0,0,0.5);
-  padding: 2px 7px;
-  border-radius: 3px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.backdrop-remaining {
-  font-size: 12px;
-  color: rgba(255,255,255,0.75);
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.65);
+  color: rgba(255,255,255,0.9);
+  backdrop-filter: blur(4px);
   white-space: nowrap;
 }
 
-.backdrop-dot {
-  color: rgba(255,255,255,0.35);
-  font-size: 10px;
-}
-
-/* Progress bar — sits right above the title, inside the image */
-.backdrop-in-image-bar {
+.trakt-progress-bar {
   height: 3px;
   background: rgba(255,255,255,0.2);
   border-radius: 2px;
   overflow: hidden;
-  margin: 0 0 0;
 }
 
-.backdrop-in-image-fill {
+.trakt-progress-fill {
   height: 100%;
   background: var(--red);
   border-radius: 2px;
-  transition: width 0.3s;
+  transition: width 0.4s ease;
 }
 
-/* Title + sub BELOW the progress bar, still inside the image */
-.backdrop-card-title-row {
-  padding: 6px 0 10px;
+/* Info row below image — text left, quick-watch right */
+.trakt-card-info {
+  padding: 8px 2px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.backdrop-card-title {
+.trakt-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.trakt-card-title {
   font-size: 14px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
 }
 
-.backdrop-card-sub {
+.trakt-card-sub {
   font-size: 12px;
-  color: rgba(255,255,255,0.6);
+  color: var(--text3);
+  margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
 }
 
-/* Quick watch button — top right corner */
-.backdrop-quick-watch {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(0,0,0,0.55);
-  border: 1px solid rgba(255,255,255,0.2);
-  color: #fff;
-  width: 32px;
-  height: 32px;
+/* Quick-watch — always visible, sits to the right of the title */
+.trakt-qw-btn {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  font-size: 14px;
+  background: rgba(229,9,20,0.85);
+  border: none;
+  color: #fff;
+  font-size: 13px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition: opacity 0.2s, background 0.15s;
-  backdrop-filter: blur(4px);
-}
-
-.backdrop-card:hover .backdrop-quick-watch { opacity: 1; }
-.backdrop-quick-watch:hover { background: rgba(229,9,20,0.85) !important; }
-
-/* Hide old external bar */
-.backdrop-progress        { display: none !important; }
-.backdrop-card-info       { display: none !important; }
-.backdrop-in-image-bar-old { display: none !important; }
-
-/* ── Recommended cards ── */
-.rec-card {
-  min-width: 140px;
-  max-width: 140px;
-  flex-shrink: 0;
-  cursor: pointer;
-  position: relative;
-  z-index: 1;
-}
-
-.rec-card:hover { z-index: 50; }
-
-.rec-card-img {
-  position: relative;
-  border-radius: var(--radius);
-  overflow: hidden;
-  aspect-ratio: 2/3;
-  background: var(--bg3);
-}
-
-.rec-card-img img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center top;
-  display: block;
-  transition: transform 0.3s ease;
-}
-
-.rec-card:hover .rec-card-img img { transform: scale(1.05); }
-
-.rec-card-rating {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  background: rgba(0,0,0,0.75);
-  color: #f5c518;
-  font-size: 11px;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 4px;
-  backdrop-filter: blur(4px);
-}
-
-.rec-card-meta-img {
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
-  background: rgba(0,0,0,0.6);
-  color: rgba(255,255,255,0.85);
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  backdrop-filter: blur(4px);
-}
-
-.rec-card-info { padding: 6px 2px 0; }
-
-.rec-card-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rec-card-reason {
-  font-size: 11px;
-  color: var(--text4);
+  transition: background 0.15s, transform 0.1s;
   margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* ── History row ── */
-.history-card {
-  min-width: 180px;
-  max-width: 180px;
+.trakt-qw-btn:hover {
+  background: var(--red-hover);
+  transform: scale(1.1);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   START WATCHING V2 CARD (ranked, TV=16/9 still, movie=2/3)
+   ═══════════════════════════════════════════════════════════ */
+
+.start-card-v2 {
   flex-shrink: 0;
+  min-width: 160px;
+  max-width: 200px;
   cursor: pointer;
   position: relative;
 }
 
-.history-card-img {
+.start-card-v2-img {
   position: relative;
-  border-radius: var(--radius);
   overflow: hidden;
-  aspect-ratio: 16/9;
+  border-radius: var(--radius);
   background: var(--bg3);
+  width: 100%;
 }
 
-.history-card-img img {
+.start-card-v2-img img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -751,38 +907,8 @@ input[type="time"] { width: auto; }
   transition: transform 0.3s ease;
 }
 
-.history-card:hover .history-card-img img { transform: scale(1.05); }
-
-.history-card-date {
-  position: absolute;
-  bottom: 6px;
-  left: 6px;
-  background: rgba(0,0,0,0.7);
-  color: rgba(255,255,255,0.8);
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  backdrop-filter: blur(4px);
-}
-
-.history-card-info { padding: 6px 2px 0; }
-
-.history-card-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.history-card-ep {
-  font-size: 11px;
-  color: var(--text3);
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.start-card-v2:hover .start-card-v2-img img {
+  transform: scale(1.05);
 }
 
 /* ── Streak widget ── */
@@ -1071,26 +1197,6 @@ input[type="time"] { width: auto; }
   outline-offset: 2px;
 }
 
-.media-card-img-wrap {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--radius);
-  background: var(--bg3);
-  aspect-ratio: 2/3;
-}
-
-.media-card-img-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: transform 0.3s ease;
-}
-
-.media-card:hover .media-card-img-wrap img {
-  transform: scale(1.05);
-}
-
 .media-card-info {
   display: flex;
   flex-direction: column;
@@ -1206,124 +1312,6 @@ input[type="time"] { width: auto; }
   padding: 2px 6px;
   border-radius: 3px;
   backdrop-filter: blur(4px);
-}
-
-/* ── Backdrop cards (horizontal, for continue watching) ── */
-.backdrop-card {
-  cursor: pointer;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  transition: transform 0.2s ease, border-color 0.2s;
-  min-width: 280px;
-  max-width: 280px;
-  flex-shrink: 0;
-}
-
-.backdrop-card:hover {
-  transform: translateY(-4px);
-  border-color: var(--border2);
-}
-
-.backdrop-card-img {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16/9;
-  overflow: hidden;
-  background: var(--bg4);
-}
-
-.backdrop-card-img img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: transform 0.3s ease;
-}
-
-.backdrop-card:hover .backdrop-card-img img {
-  transform: scale(1.04);
-}
-
-.backdrop-card-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 60%);
-}
-
-.backdrop-card-ep {
-  position: absolute;
-  bottom: 8px;
-  left: 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-  background: rgba(229,9,20,0.9);
-  padding: 2px 8px;
-  border-radius: 3px;
-}
-
-.backdrop-quick-watch {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  background: rgba(255,255,255,0.15);
-  border: none;
-  color: #fff;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.2s, background 0.15s;
-  backdrop-filter: blur(4px);
-}
-
-.backdrop-card:hover .backdrop-quick-watch { opacity: 1; }
-.backdrop-quick-watch:hover { background: rgba(229,9,20,0.8) !important; }
-
-.backdrop-card-info {
-  padding: 10px 12px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.backdrop-card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.backdrop-card-sub {
-  font-size: 12px;
-  color: var(--text3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.backdrop-progress {
-  height: 2px;
-  background: var(--bg4);
-  border-radius: 1px;
-  margin-top: 6px;
-  overflow: hidden;
-}
-
-.backdrop-progress-fill {
-  height: 100%;
-  background: var(--red);
-  border-radius: 1px;
-  transition: width 0.3s;
 }
 
 /* ── Home page rows ── */
@@ -1526,12 +1514,13 @@ input[type="time"] { width: auto; }
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.2s, border-color 0.2s;
+  /* No translateY — use box-shadow for hover depth instead */
+  transition: box-shadow 0.2s, border-color 0.2s;
   flex-shrink: 0;
 }
 
 .schedule-card:hover {
-  transform: translateY(-4px);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
   border-color: var(--border2);
 }
 
