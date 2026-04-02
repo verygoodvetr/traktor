@@ -28,19 +28,20 @@ function Settings({ user }) {
   const [savingUsername, setSavingUsername] = useState(false)
   const [isPrivate,      setIsPrivate]      = useState(false)
   const [visibleFields,  setVisibleFields]  = useState({
-    watchHistory:    true,
-    ratings:         true,
-    watchlist:       true,
-    episodeProgress: true,
+    watchHistory: true, ratings: true, watchlist: true, episodeProgress: true,
   })
+
+  // Display preferences (persisted in localStorage)
   const [use12hClock, setUse12hClock] = useState(() => {
     try { return localStorage.getItem('traktor_12h') === 'true' } catch { return false }
+  })
+  const [useDMY, setUseDMY] = useState(() => {
+    try { return localStorage.getItem('traktor_dmy') !== 'false' } catch { return true }
   })
 
   const privacyTimer = useRef(null)
   const navigate = useNavigate()
 
-  /* ── Load profile ── */
   useEffect(() => {
     setProviders(user.providerData.map(p => p.providerId))
     getUserProfile(user.uid).then(p => {
@@ -50,13 +51,11 @@ function Settings({ user }) {
       setDisplayName(p.displayName || user.displayName || '')
       setIsPrivate(p.isPrivate || false)
       setVisibleFields(p.visibleFields || {
-        watchHistory: true, ratings: true,
-        watchlist: true, episodeProgress: true,
+        watchHistory: true, ratings: true, watchlist: true, episodeProgress: true,
       })
     })
   }, [user])
 
-  /* ── Auto-save privacy settings ── */
   useEffect(() => {
     if (!profile) return
     clearTimeout(privacyTimer.current)
@@ -66,14 +65,18 @@ function Settings({ user }) {
     return () => clearTimeout(privacyTimer.current)
   }, [isPrivate, visibleFields]) // eslint-disable-line
 
-  /* ── 12h clock toggle ── */
-  function toggle12hClock(val) {
+  function toggle12h(val) {
     setUse12hClock(val)
     try { localStorage.setItem('traktor_12h', val ? 'true' : 'false') } catch {}
     showToast(`Switched to ${val ? '12-hour' : '24-hour'} clock`)
   }
 
-  /* ── Linked accounts ── */
+  function toggleDMY(val) {
+    setUseDMY(val)
+    try { localStorage.setItem('traktor_dmy', val ? 'true' : 'false') } catch {}
+    showToast(`Date format: ${val ? 'DD.MM.YYYY' : 'MM/DD/YYYY'}`)
+  }
+
   async function linkProvider(provider, providerId) {
     try {
       await linkWithPopup(auth.currentUser, provider)
@@ -90,8 +93,7 @@ function Settings({ user }) {
 
   async function unlinkProvider(providerId) {
     if (providers.length === 1) {
-      showToast("You can't unlink your only sign-in method!", 'error')
-      return
+      showToast("You can't unlink your only sign-in method!", 'error'); return
     }
     try {
       await unlink(auth.currentUser, providerId)
@@ -102,15 +104,10 @@ function Settings({ user }) {
     }
   }
 
-  /* ── Save username ── */
   async function saveUsername() {
     const trimmed = username.trim()
-    if (trimmed.length < 2) {
-      showToast('Username must be at least 2 characters.', 'error'); return
-    }
-    if (trimmed.length > 24) {
-      showToast('Username must be at most 24 characters.', 'error'); return
-    }
+    if (trimmed.length < 2)  { showToast('Username must be at least 2 characters.', 'error'); return }
+    if (trimmed.length > 24) { showToast('Username must be at most 24 characters.', 'error'); return }
     if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
       showToast('Username can only contain letters, numbers and underscores.', 'error'); return
     }
@@ -120,10 +117,7 @@ function Settings({ user }) {
     setSavingUsername(true)
     if (trimmed !== profile?.username) {
       const taken = await isUsernameTaken(trimmed)
-      if (taken) {
-        showToast('This username is already taken.', 'error')
-        setSavingUsername(false); return
-      }
+      if (taken) { showToast('This username is already taken.', 'error'); setSavingUsername(false); return }
     }
     await updateUserProfile(user.uid, { username: trimmed })
     setProfile(prev => ({ ...prev, username: trimmed }))
@@ -131,7 +125,6 @@ function Settings({ user }) {
     setSavingUsername(false)
   }
 
-  /* ── Save display name ── */
   async function saveDisplayName() {
     const trimmed = displayName.trim()
     if (!trimmed) { showToast('Display name cannot be empty.', 'error'); return }
@@ -140,43 +133,36 @@ function Settings({ user }) {
       await updateProfile(auth.currentUser, { displayName: trimmed })
       await updateUserProfile(user.uid, { displayName: trimmed })
       showToast('Display name saved!')
-    } catch {
-      showToast('Something went wrong.', 'error')
-    }
+    } catch { showToast('Something went wrong.', 'error') }
     setSavingUsername(false)
   }
 
-  /* ── Toggle visible field ── */
   function toggleVisibleField(field) {
     setVisibleFields(prev => ({ ...prev, [field]: !prev[field] }))
   }
 
-  /* ── Export data ── */
   async function handleExport() {
     setExporting(true)
     try {
       const JSZip = (await import('jszip')).default
       const data  = await exportUserData(user)
       const zip   = new JSZip()
-
-      zip.file('profile.json',         JSON.stringify(data.profile,   null, 2))
-      zip.file('watched-movies.json',  JSON.stringify(data.watched.filter(i => i.media_type === 'movie'), null, 2))
-      zip.file('watched-shows.json',   JSON.stringify(data.watched.filter(i => i.media_type === 'tv'),    null, 2))
-      zip.file('watchlist-movies.json',JSON.stringify(data.watchlist.filter(i => i.media_type === 'movie'),null,2))
-      zip.file('watchlist-shows.json', JSON.stringify(data.watchlist.filter(i => i.media_type === 'tv'),   null,2))
-      zip.file('episodes.json',        JSON.stringify(data.episodes,  null, 2))
-      zip.file('ratings.json',         JSON.stringify(
+      zip.file('profile.json',          JSON.stringify(data.profile, null, 2))
+      zip.file('watched-movies.json',   JSON.stringify(data.watched.filter(i => i.media_type === 'movie'), null, 2))
+      zip.file('watched-shows.json',    JSON.stringify(data.watched.filter(i => i.media_type === 'tv'), null, 2))
+      zip.file('watchlist-movies.json', JSON.stringify(data.watchlist.filter(i => i.media_type === 'movie'), null, 2))
+      zip.file('watchlist-shows.json',  JSON.stringify(data.watchlist.filter(i => i.media_type === 'tv'), null, 2))
+      zip.file('episodes.json',         JSON.stringify(data.episodes, null, 2))
+      zip.file('ratings.json',          JSON.stringify(
         data.watched.filter(i => i.rating != null).map(i => ({
           title: i.title, media_type: i.media_type, id: i.id, rating: i.rating,
         })), null, 2
       ))
-      zip.file('README.txt', `Traktor Data Export\n===================\nExported: ${new Date().toLocaleString()}\nAccount:  ${data.profile.displayName} (${data.profile.email})\n`)
-
       const blob = await zip.generateAsync({ type: 'blob' })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href     = url
-      a.download = `traktor-export-${new Date().toISOString().slice(0, 10)}.zip`
+      a.download = `traktor-export-${new Date().toISOString().slice(0,10)}.zip`
       a.click()
       URL.revokeObjectURL(url)
       showToast('Export downloaded!')
@@ -187,7 +173,6 @@ function Settings({ user }) {
     setExporting(false)
   }
 
-  /* ── Delete account ── */
   async function handleDeleteAccount() {
     if (confirmText !== 'DELETE') return
     setDeleting(true)
@@ -207,10 +192,7 @@ function Settings({ user }) {
       } else {
         showToast(`Deletion failed: ${err.message}`, 'error')
       }
-      setShowDeleteFlow(false)
-      setDeleteStep(1)
-      setConfirmText('')
-      setDeleting(false)
+      setShowDeleteFlow(false); setDeleteStep(1); setConfirmText(''); setDeleting(false)
     }
   }
 
@@ -230,37 +212,29 @@ function Settings({ user }) {
               Your username is how others find you on Traktor.
               {profile?.username && ` Your public profile is at /user/${profile.username}`}
             </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
               <div>
-                <label style={{ fontSize: 13, opacity: 0.6, marginBottom: 6, display: 'block' }}>Username</label>
+                <label style={{ fontSize:13, opacity:0.6, marginBottom:6, display:'block' }}>Username</label>
                 <div className="username-row">
                   <span className="username-at">@</span>
                   <input
                     type="text"
                     value={username}
-                    onChange={e =>
-                      setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
-                    }
+                    onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                     placeholder="username"
                     maxLength={24}
-                    style={{ flex: 1 }}
+                    style={{ flex:1 }}
                   />
-                  <button
-                    className="action-btn"
-                    onClick={saveUsername}
-                    disabled={savingUsername || username.length < 2}
-                  >
+                  <button className="action-btn" onClick={saveUsername} disabled={savingUsername || username.length < 2}>
                     {savingUsername ? 'Saving…' : 'Save'}
                   </button>
                 </div>
-                <p style={{ fontSize: 12, color: 'var(--text4)', marginTop: 4 }}>
+                <p style={{ fontSize:12, color:'var(--text4)', marginTop:4 }}>
                   2–24 characters. Letters, numbers and underscores only.
                 </p>
               </div>
-
               <div>
-                <label style={{ fontSize: 13, opacity: 0.6, marginBottom: 6, display: 'block' }}>Display name</label>
+                <label style={{ fontSize:13, opacity:0.6, marginBottom:6, display:'block' }}>Display name</label>
                 <div className="username-row">
                   <input
                     type="text"
@@ -268,7 +242,7 @@ function Settings({ user }) {
                     onChange={e => setDisplayName(e.target.value)}
                     placeholder="Your display name"
                     maxLength={40}
-                    style={{ flex: 1 }}
+                    style={{ flex:1 }}
                   />
                   <button className="action-btn" onClick={saveDisplayName} disabled={savingUsername}>Save</button>
                 </div>
@@ -280,19 +254,27 @@ function Settings({ user }) {
           <div className="settings-section">
             <h2>Display</h2>
             <p className="settings-desc">
-              Adjust how time is shown across the app (e.g. upcoming episode air times).
+              Adjust how times and dates are shown across the app — e.g. upcoming air times and watch history.
             </p>
+
             <div className="privacy-row">
               <div>
                 <p className="privacy-label">Time format</p>
-                <p className="privacy-desc">{use12hClock ? '12-hour (e.g. 4:00 PM)' : '24-hour (e.g. 16:00)'}</p>
+                <p className="privacy-desc">{use12hClock ? '12-hour — e.g. 4:00 PM' : '24-hour — e.g. 16:00'}</p>
               </div>
               <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={use12hClock}
-                  onChange={e => toggle12hClock(e.target.checked)}
-                />
+                <input type="checkbox" checked={use12hClock} onChange={e => toggle12h(e.target.checked)} />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+
+            <div className="privacy-row">
+              <div>
+                <p className="privacy-label">Date format</p>
+                <p className="privacy-desc">{useDMY ? 'DD.MM.YYYY — e.g. 31.12.2025' : 'MM/DD/YYYY — e.g. 12/31/2025'}</p>
+              </div>
+              <label className="toggle">
+                <input type="checkbox" checked={useDMY} onChange={e => toggleDMY(e.target.checked)} />
                 <span className="toggle-slider" />
               </label>
             </div>
@@ -301,9 +283,7 @@ function Settings({ user }) {
           {/* ── Privacy ── */}
           <div className="settings-section">
             <h2>Privacy</h2>
-            <p className="settings-desc">
-              Control who can see your profile and what they can see. Settings save automatically.
-            </p>
+            <p className="settings-desc">Control who can see your profile and what they can see. Settings save automatically.</p>
 
             <div className="privacy-row">
               <div>
@@ -318,23 +298,17 @@ function Settings({ user }) {
 
             {!isPrivate && (
               <>
-                <p className="settings-desc" style={{ marginTop: 16 }}>
-                  Choose what others can see on your public profile:
-                </p>
+                <p className="settings-desc" style={{ marginTop:16 }}>Choose what others can see on your public profile:</p>
                 {[
-                  { key: 'watchHistory',    label: 'Watch history' },
-                  { key: 'ratings',         label: 'Ratings' },
-                  { key: 'watchlist',       label: 'Watchlist' },
-                  { key: 'episodeProgress', label: 'Episode progress' },
+                  { key:'watchHistory',    label:'Watch history' },
+                  { key:'ratings',         label:'Ratings' },
+                  { key:'watchlist',       label:'Watchlist' },
+                  { key:'episodeProgress', label:'Episode progress' },
                 ].map(field => (
                   <div className="privacy-row" key={field.key}>
                     <p className="privacy-label">{field.label}</p>
                     <label className="toggle">
-                      <input
-                        type="checkbox"
-                        checked={visibleFields[field.key] ?? true}
-                        onChange={() => toggleVisibleField(field.key)}
-                      />
+                      <input type="checkbox" checked={visibleFields[field.key] ?? true} onChange={() => toggleVisibleField(field.key)} />
                       <span className="toggle-slider" />
                     </label>
                   </div>
@@ -346,22 +320,18 @@ function Settings({ user }) {
           {/* ── Linked accounts ── */}
           <div className="settings-section">
             <h2>Linked accounts</h2>
-            <p className="settings-desc">
-              Link multiple accounts so you can sign in with either one.
-            </p>
+            <p className="settings-desc">Link multiple accounts so you can sign in with either one.</p>
             <div className="provider-row">
               <span>Google</span>
               {googleLinked
                 ? <button className="unlink-btn" onClick={() => unlinkProvider('google.com')}>Unlink</button>
-                : <button className="action-btn" onClick={() => linkProvider(googleProvider, 'google.com')}>Link Google</button>
-              }
+                : <button className="action-btn" onClick={() => linkProvider(googleProvider, 'google.com')}>Link Google</button>}
             </div>
             <div className="provider-row">
               <span>Microsoft</span>
               {microsoftLinked
                 ? <button className="unlink-btn" onClick={() => unlinkProvider('microsoft.com')}>Unlink</button>
-                : <button className="action-btn" onClick={() => linkProvider(microsoftProvider, 'microsoft.com')}>Link Microsoft</button>
-              }
+                : <button className="action-btn" onClick={() => linkProvider(microsoftProvider, 'microsoft.com')}>Link Microsoft</button>}
             </div>
           </div>
 
@@ -377,14 +347,10 @@ function Settings({ user }) {
           {/* ── Delete ── */}
           <div className="settings-section danger-section">
             <h2>Delete account</h2>
-            <p className="settings-desc">
-              Permanently delete your account and all your data. This cannot be undone.
-            </p>
+            <p className="settings-desc">Permanently delete your account and all your data. This cannot be undone.</p>
 
             {!showDeleteFlow ? (
-              <button className="danger-btn" onClick={() => setShowDeleteFlow(true)}>
-                Delete my account
-              </button>
+              <button className="danger-btn" onClick={() => setShowDeleteFlow(true)}>Delete my account</button>
             ) : (
               <div className="delete-flow">
                 {deleteStep === 1 && (
@@ -404,22 +370,15 @@ function Settings({ user }) {
                       no backup, and no way to recover your data once deleted.
                     </p>
                     <div className="delete-flow-buttons">
-                      <button className="danger-btn" onClick={() => setDeleteStep(2)}>
-                        I understand, continue
-                      </button>
-                      <button className="unlink-btn" onClick={() => { setShowDeleteFlow(false); setDeleteStep(1) }}>
-                        Cancel
-                      </button>
+                      <button className="danger-btn" onClick={() => setDeleteStep(2)}>I understand, continue</button>
+                      <button className="unlink-btn" onClick={() => { setShowDeleteFlow(false); setDeleteStep(1) }}>Cancel</button>
                     </div>
                   </div>
                 )}
-
                 {deleteStep === 2 && (
                   <div className="delete-confirm">
                     <h3>Type DELETE to confirm</h3>
-                    <p className="settings-desc">
-                      Type <strong>DELETE</strong> in all caps to permanently delete your account.
-                    </p>
+                    <p className="settings-desc">Type <strong>DELETE</strong> in all caps to permanently delete your account.</p>
                     <input
                       type="text"
                       value={confirmText}

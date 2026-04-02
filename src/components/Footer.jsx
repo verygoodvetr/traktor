@@ -20,16 +20,29 @@ function Footer() {
               <a href="mailto:traktorapp@gmail.com">traktorapp@gmail.com</a>
             </div>
             <div className="footer-nav-group">
-              <p className="footer-nav-title">Data</p>
+              <p className="footer-nav-title">Data sources</p>
               <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">
-                Powered by TMDB
+                TMDB
+              </a>
+              <a href="https://www.omdbapi.com" target="_blank" rel="noopener noreferrer">
+                OMDb
               </a>
             </div>
           </div>
         </div>
         <div className="footer-bottom">
           <span className="footer-copy">© {new Date().getFullYear()} Traktor. All rights reserved.</span>
-          <span className="footer-copy">Movie and TV data provided by The Movie Database (TMDB).</span>
+          <span className="footer-copy">
+            Movie and TV data provided by{' '}
+            <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text3)' }}>
+              The Movie Database (TMDB)
+            </a>
+            {' '}and{' '}
+            <a href="https://www.omdbapi.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text3)' }}>
+              OMDb
+            </a>
+            . Not affiliated with or endorsed by these services.
+          </span>
         </div>
       </div>
     </footer>

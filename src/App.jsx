@@ -1,12 +1,12 @@
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
 import { AnimatePresence } from 'framer-motion'
 import { auth, googleProvider, microsoftProvider } from './firebase'
 import { ToastContainer } from './components/Toast'
 import { getUserProfile, calculateStreak } from './firestore'
 import FirstLoginModal from './components/FirstLoginModal'
-import Home from './pages/Home'
+import Home, { subscribeToRefresh } from './pages/Home'
 import Search from './pages/Search'
 import Profile from './pages/Profile'
 import MovieDetail from './pages/MovieDetail'
@@ -77,12 +77,12 @@ function StreakWidget({ streak }) {
 }
 
 // ── Animated routes ───────────────────────────────────────
-function AnimatedRoutes({ user, onSignIn }) {
+function AnimatedRoutes({ user, onSignIn, onStreakRefresh }) {
   const location = useLocation()
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        <Route path="/"          element={<Home      user={user} onSignIn={onSignIn} />} />
+        <Route path="/"          element={<Home user={user} onSignIn={onSignIn} onStreakRefresh={onStreakRefresh} />} />
         <Route path="/search"    element={<Search />} />
         <Route path="/discovery" element={<Discovery user={user} />} />
         <Route path="/profile"   element={user ? <Profile  user={user} /> : <Navigate to="/" />} />
@@ -106,6 +106,13 @@ function App() {
   const [showFirstLogin, setShowFirstLogin] = useState(false)
   const [streak,         setStreak]         = useState(null)
 
+  const refreshStreak = useCallback(async (u) => {
+    const target = u || auth.currentUser
+    if (!target) return
+    const streakData = await calculateStreak(target)
+    setStreak(streakData)
+  }, [])
+
   /* Auth listener */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async u => {
@@ -113,14 +120,19 @@ function App() {
       if (u) {
         const profile = await getUserProfile(u.uid)
         if (!profile || !profile.acceptedTos) setShowFirstLogin(true)
-        const streakData = await calculateStreak(u)
-        setStreak(streakData)
+        refreshStreak(u)
       } else {
         setStreak(null)
       }
     })
     return unsub
-  }, [])
+  }, [refreshStreak])
+
+  /* Also refresh streak on any broadcastRefresh (quick-watch etc.) */
+  useEffect(() => {
+    const unsub = subscribeToRefresh(() => refreshStreak())
+    return unsub
+  }, [refreshStreak])
 
   /* Close dropdowns on outside click */
   useEffect(() => {
@@ -168,21 +180,15 @@ function App() {
         </div>
 
         <div className="nav-auth">
-          {/* Streak */}
           {user && streak && <StreakWidget streak={streak} />}
 
-          {/* Profile / Sign-in */}
           {user ? (
             <div className="profile-dropdown">
               <div
                 className="profile-trigger"
                 onClick={() => setShowProviders(p => !p)}
               >
-                <img
-                  className="nav-avatar"
-                  src={user.photoURL}
-                  alt={user.displayName}
-                />
+                <img className="nav-avatar" src={user.photoURL} alt={user.displayName} />
                 <span className="nav-username">{user.displayName}</span>
                 <span className="dropdown-arrow">▾</span>
               </div>
@@ -216,7 +222,7 @@ function App() {
       </nav>
 
       <main>
-        <AnimatedRoutes user={user} onSignIn={() => setShowProviders(true)} />
+        <AnimatedRoutes user={user} onSignIn={() => setShowProviders(true)} onStreakRefresh={refreshStreak} />
       </main>
 
       <Footer />

@@ -2685,3 +2685,110 @@ input[type="time"] { width: auto; }
   cursor: default;
   user-select: none;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   SCROLL ARROWS — always rendered, dim when not usable
+   ═══════════════════════════════════════════════════════════ */
+.scroll-arrow {
+  flex-shrink: 0;
+  width: 36px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text4);
+  font-size: 20px;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+  opacity: 0.18;
+  pointer-events: none;
+}
+.scroll-arrow.visible {
+  opacity: 1;
+  pointer-events: all;
+  cursor: pointer;
+}
+.scroll-arrow.visible:hover {
+  background: var(--bg4);
+  color: var(--text);
+  border-color: var(--border2);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   POSTER CARD — flex column for QW button below image
+   ═══════════════════════════════════════════════════════════ */
+.poster-card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ROW EMPTY — no pointer, no hover
+   ═══════════════════════════════════════════════════════════ */
+.row-empty-msg {
+  font-size: 14px;
+  color: var(--text4);
+  padding: 20px 0 8px;
+  font-style: italic;
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LEGAL PAGE — subsections, richer typography
+   ═══════════════════════════════════════════════════════════ */
+.legal-page h1 {
+  font-size: 36px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.legal-page h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.legal-subsection {
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.legal-subsection h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+.legal-section {
+  margin-bottom: 40px;
+}
+.legal-section p {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text2);
+  margin-bottom: 10px;
+}
+.legal-section ul {
+  padding-left: 20px;
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.legal-section li {
+  list-style: disc;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text2);
+}
+.legal-section strong {
+  color: var(--text);
+  font-weight: 600;
+}
