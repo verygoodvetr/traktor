@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
 import { AnimatePresence } from 'framer-motion'
@@ -6,6 +6,7 @@ import { auth, googleProvider, microsoftProvider } from './firebase'
 import { ToastContainer } from './components/Toast'
 import { getUserProfile, calculateStreak } from './firestore'
 import FirstLoginModal from './components/FirstLoginModal'
+import SearchOverlay from './components/SearchOverlay'
 import Home, { subscribeToRefresh } from './pages/Home'
 import Search from './pages/Search'
 import Profile from './pages/Profile'
@@ -85,9 +86,9 @@ function AnimatedRoutes({ user, onSignIn, onStreakRefresh }) {
         <Route path="/"          element={<Home user={user} onSignIn={onSignIn} onStreakRefresh={onStreakRefresh} />} />
         <Route path="/search"    element={<Search />} />
         <Route path="/discovery" element={<Discovery user={user} />} />
-        <Route path="/profile"   element={user ? <Profile  user={user} /> : <Navigate to="/" />} />
+        <Route path="/profile"   element={user ? <Profile user={user} /> : <Navigate to="/" />} />
         <Route path="/settings"  element={user ? <Settings user={user} /> : <Navigate to="/" />} />
-        <Route path="/movie/:type/:id"                                    element={<MovieDetail  user={user} />} />
+        <Route path="/movie/:type/:id"                                    element={<MovieDetail user={user} />} />
         <Route path="/tv/:showId/season/:seasonNum"                       element={<SeasonDetail user={user} />} />
         <Route path="/tv/:showId/season/:seasonNum/episode/:episodeNum"   element={<EpisodeDetail user={user} />} />
         <Route path="/person/:personId"  element={<PersonDetail />} />
@@ -99,12 +100,68 @@ function AnimatedRoutes({ user, onSignIn, onStreakRefresh }) {
   )
 }
 
+// ── Nav with search button ────────────────────────────────
+function NavBar({ user, streak, showProviders, setShowProviders, onShowSearch, login, logout }) {
+  return (
+    <nav>
+      <div className="nav-links">
+        <Link to="/" className="nav-brand">Traktor</Link>
+        {user && <Link to="/discovery">Discovery</Link>}
+      </div>
+
+      <div className="nav-auth">
+        {/* Search button — always visible */}
+        <button className="nav-search-btn" onClick={onShowSearch} title="Search (/)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <span>Search</span>
+        </button>
+
+        {user && streak && <StreakWidget streak={streak} />}
+
+        {user ? (
+          <div className="profile-dropdown">
+            <div className="profile-trigger" onClick={() => setShowProviders(p => !p)}>
+              <img className="nav-avatar" src={user.photoURL} alt={user.displayName} />
+              <span className="nav-username">{user.displayName}</span>
+              <span className="dropdown-arrow">▾</span>
+            </div>
+            {showProviders && (
+              <div className="login-options">
+                <Link to="/profile"  onClick={() => setShowProviders(false)}>My Profile</Link>
+                <Link to="/settings" onClick={() => setShowProviders(false)}>Settings</Link>
+                <hr className="dropdown-divider" />
+                <button onClick={logout}>Log out</button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="login-dropdown">
+            <button className="landing-btn-primary" style={{ padding: '8px 20px', fontSize: '14px' }}
+              onClick={() => setShowProviders(p => !p)}>
+              Sign in
+            </button>
+            {showProviders && (
+              <div className="login-options">
+                <button onClick={() => login(googleProvider)}>Sign in with Google</button>
+                <button onClick={() => login(microsoftProvider)}>Sign in with Microsoft</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </nav>
+  )
+}
+
 // ── App ───────────────────────────────────────────────────
 function App() {
   const [user,           setUser]           = useState(undefined)
   const [showProviders,  setShowProviders]  = useState(false)
   const [showFirstLogin, setShowFirstLogin] = useState(false)
   const [streak,         setStreak]         = useState(null)
+  const [showSearch,     setShowSearch]     = useState(false)
 
   const refreshStreak = useCallback(async (u) => {
     const target = u || auth.currentUser
@@ -113,7 +170,6 @@ function App() {
     setStreak(streakData)
   }, [])
 
-  /* Auth listener */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async u => {
       setUser(u)
@@ -128,19 +184,27 @@ function App() {
     return unsub
   }, [refreshStreak])
 
-  /* Also refresh streak on any broadcastRefresh (quick-watch etc.) */
   useEffect(() => {
     const unsub = subscribeToRefresh(() => refreshStreak())
     return unsub
   }, [refreshStreak])
 
-  /* Close dropdowns on outside click */
+  // Keyboard shortcut: / to open search
+  useEffect(() => {
+    function handler(e) {
+      if (e.key === '/' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        e.preventDefault()
+        setShowSearch(true)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   useEffect(() => {
     function handleClick(e) {
-      if (
-        !e.target.closest('.profile-dropdown') &&
-        !e.target.closest('.login-dropdown')
-      ) setShowProviders(false)
+      if (!e.target.closest('.profile-dropdown') && !e.target.closest('.login-dropdown'))
+        setShowProviders(false)
     }
     document.addEventListener('click', handleClick)
     return () => document.removeEventListener('click', handleClick)
@@ -164,62 +228,21 @@ function App() {
     <BrowserRouter>
       <ToastContainer />
 
+      {showSearch && <SearchOverlay onClose={() => setShowSearch(false)} />}
+
       {showFirstLogin && user && (
-        <FirstLoginModal
-          user={user}
-          onComplete={() => setShowFirstLogin(false)}
-        />
+        <FirstLoginModal user={user} onComplete={() => setShowFirstLogin(false)} />
       )}
 
-      {/* ── Nav ── */}
-      <nav>
-        <div className="nav-links">
-          <Link to="/" className="nav-brand">Traktor</Link>
-          {user && <Link to="/search">Search</Link>}
-          {user && <Link to="/discovery">Discovery</Link>}
-        </div>
-
-        <div className="nav-auth">
-          {user && streak && <StreakWidget streak={streak} />}
-
-          {user ? (
-            <div className="profile-dropdown">
-              <div
-                className="profile-trigger"
-                onClick={() => setShowProviders(p => !p)}
-              >
-                <img className="nav-avatar" src={user.photoURL} alt={user.displayName} />
-                <span className="nav-username">{user.displayName}</span>
-                <span className="dropdown-arrow">▾</span>
-              </div>
-              {showProviders && (
-                <div className="login-options">
-                  <Link to="/profile"  onClick={() => setShowProviders(false)}>My Profile</Link>
-                  <Link to="/settings" onClick={() => setShowProviders(false)}>Settings</Link>
-                  <hr className="dropdown-divider" />
-                  <button onClick={logout}>Log out</button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="login-dropdown">
-              <button
-                className="landing-btn-primary"
-                style={{ padding: '8px 20px', fontSize: '14px' }}
-                onClick={() => setShowProviders(p => !p)}
-              >
-                Sign in
-              </button>
-              {showProviders && (
-                <div className="login-options">
-                  <button onClick={() => login(googleProvider)}>Sign in with Google</button>
-                  <button onClick={() => login(microsoftProvider)}>Sign in with Microsoft</button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </nav>
+      <NavBar
+        user={user}
+        streak={streak}
+        showProviders={showProviders}
+        setShowProviders={setShowProviders}
+        onShowSearch={() => setShowSearch(true)}
+        login={login}
+        logout={logout}
+      />
 
       <main>
         <AnimatedRoutes user={user} onSignIn={() => setShowProviders(true)} onStreakRefresh={refreshStreak} />

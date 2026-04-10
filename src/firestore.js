@@ -1,9 +1,35 @@
 import { db } from './firebase'
-import { doc, setDoc, deleteDoc, getDoc, collection, getDocs, writeBatch } from 'firebase/firestore'
+import { doc, setDoc, deleteDoc, getDoc, collection, getDocs, writeBatch, query, where } from 'firebase/firestore'
+
+// ─────────────────────────────────────────────────────────
+// In-memory cache to drastically reduce Firestore reads
+// Cache is per-session and invalidated on writes
+// ─────────────────────────────────────────────────────────
+const _cache = new Map()
+
+function cacheKey(uid, sub) {
+  return `${uid}:${sub}`
+}
+
+function invalidateUserCache(uid) {
+  for (const key of _cache.keys()) {
+    if (key.startsWith(`${uid}:`)) _cache.delete(key)
+  }
+}
+
+async function getCachedCollection(uid, sub) {
+  const key = cacheKey(uid, sub)
+  if (_cache.has(key)) return _cache.get(key)
+  const snap = await getDocs(collection(db, 'users', uid, sub))
+  const result = {}
+  snap.forEach(d => { result[d.id] = d.data() })
+  _cache.set(key, result)
+  return result
+}
 
 export async function addToWatched(user, item, watchedAt = 'now') {
   const ref = doc(db, 'users', user.uid, 'watched', `${item.media_type}-${item.id}`)
-  await setDoc(ref, {
+  const data = {
     id: item.id,
     media_type: item.media_type,
     title: item.title || item.name,
@@ -11,7 +37,9 @@ export async function addToWatched(user, item, watchedAt = 'now') {
     rating: null,
     watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt,
     watchedAtUnknown: watchedAt === 'unknown'
-  })
+  }
+  await setDoc(ref, data)
+  invalidateUserCache(user.uid)
 }
 
 export async function removeFromWatched(user, item) {
@@ -20,6 +48,7 @@ export async function removeFromWatched(user, item) {
   if (item.media_type === 'tv') {
     await unmarkAllShowEpisodes(user, item.id)
   }
+  invalidateUserCache(user.uid)
 }
 
 export async function unmarkAllShowEpisodes(user, showId) {
@@ -31,6 +60,7 @@ export async function unmarkAllShowEpisodes(user, showId) {
     }
   })
   await batch.commit()
+  invalidateUserCache(user.uid)
 }
 
 export async function addToWatchlist(user, item) {
@@ -42,27 +72,21 @@ export async function addToWatchlist(user, item) {
     poster_path: item.poster_path || null,
     addedAt: new Date().toISOString()
   })
+  invalidateUserCache(user.uid)
 }
 
 export async function removeFromWatchlist(user, item) {
   const ref = doc(db, 'users', user.uid, 'watchlist', `${item.media_type}-${item.id}`)
   await deleteDoc(ref)
+  invalidateUserCache(user.uid)
 }
 
 export async function getUserData(user) {
-  const watchedSnap = await getDocs(collection(db, 'users', user.uid, 'watched'))
-  const watchlistSnap = await getDocs(collection(db, 'users', user.uid, 'watchlist'))
-  const episodesSnap = await getDocs(collection(db, 'users', user.uid, 'episodes'))
-
-  const watched = {}
-  watchedSnap.forEach(doc => { watched[doc.id] = doc.data() })
-
-  const watchlist = {}
-  watchlistSnap.forEach(doc => { watchlist[doc.id] = doc.data() })
-
-  const episodes = {}
-  episodesSnap.forEach(doc => { episodes[doc.id] = doc.data() })
-
+  const [watched, watchlist, episodes] = await Promise.all([
+    getCachedCollection(user.uid, 'watched'),
+    getCachedCollection(user.uid, 'watchlist'),
+    getCachedCollection(user.uid, 'episodes'),
+  ])
   return { watched, watchlist, episodes }
 }
 
@@ -70,30 +94,38 @@ export async function setRating(user, item, rating) {
   const ref = doc(db, 'users', user.uid, 'watched', `${item.media_type}-${item.id}`)
   const snap = await getDoc(ref)
   if (snap.exists()) {
-    await setDoc(ref, { ...snap.data(), rating })
+    const updated = { ...snap.data(), rating }
+    await setDoc(ref, updated)
+    // Update cache directly
+    const key = cacheKey(user.uid, 'watched')
+    if (_cache.has(key)) {
+      _cache.get(key)[`${item.media_type}-${item.id}`] = updated
+    }
   }
 }
 
 export async function markEpisodeWatched(user, showId, seasonNum, episodeNum, watchedAt = 'now') {
   const ref = doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${episodeNum}`)
-  await setDoc(ref, {
+  const data = {
     showId,
     seasonNum,
     episodeNum,
     watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt,
     watchedAtUnknown: watchedAt === 'unknown'
-  })
+  }
+  await setDoc(ref, data)
+  invalidateUserCache(user.uid)
 }
 
 export async function unmarkEpisodeWatched(user, showId, seasonNum, episodeNum) {
   const ref = doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${episodeNum}`)
   await deleteDoc(ref)
-  // Also unmark show as fully watched
   const showRef = doc(db, 'users', user.uid, 'watched', `tv-${showId}`)
   const showSnap = await getDoc(showRef)
   if (showSnap.exists()) {
     await deleteDoc(showRef)
   }
+  invalidateUserCache(user.uid)
 }
 
 export async function unmarkSeasonWatched(user, showId, seasonNum, episodes) {
@@ -103,22 +135,21 @@ export async function unmarkSeasonWatched(user, showId, seasonNum, episodes) {
     batch.delete(ref)
   }
   await batch.commit()
-  // Also unmark show as fully watched since a season was unwatched
   const showRef = doc(db, 'users', user.uid, 'watched', `tv-${showId}`)
   const showSnap = await getDoc(showRef)
   if (showSnap.exists()) {
     await deleteDoc(showRef)
   }
+  invalidateUserCache(user.uid)
 }
 
 export async function getShowEpisodes(user, showId) {
-  const snap = await getDocs(collection(db, 'users', user.uid, 'episodes'))
+  // Use cached episodes and filter client-side
+  const allEpisodes = await getCachedCollection(user.uid, 'episodes')
   const episodes = {}
-  snap.forEach(doc => {
-    if (doc.data().showId === showId) {
-      episodes[doc.id] = doc.data()
-    }
-  })
+  for (const [id, data] of Object.entries(allEpisodes)) {
+    if (data.showId === showId) episodes[id] = data
+  }
   return episodes
 }
 
@@ -135,10 +166,10 @@ export async function markSeasonWatched(user, showId, seasonNum, episodes, watch
     })
   }
   await batch.commit()
+  invalidateUserCache(user.uid)
 }
 
 export async function markAllSeasonsWatched(user, showId, seasons, watchedAt = 'now') {
-  // Process in parallel batches of 100 (Firestore limit: 500)
   const BATCH_SIZE = 100
   const allOps = []
 
@@ -157,45 +188,38 @@ export async function markAllSeasonsWatched(user, showId, seasons, watchedAt = '
     }
   }
 
-  // Process in chunks
   for (let i = 0; i < allOps.length; i += BATCH_SIZE) {
     const chunk = allOps.slice(i, i + BATCH_SIZE)
     const batch = writeBatch(db)
     chunk.forEach(({ ref, data }) => batch.set(ref, data))
     await batch.commit()
   }
+  invalidateUserCache(user.uid)
 }
 
 export async function calculateStreak(user) {
-  const snap = await getDocs(collection(db, 'users', user.uid, 'watched'))
-  const episodesSnap = await getDocs(collection(db, 'users', user.uid, 'episodes'))
+  // Use cached data — no extra reads
+  const [watchedData, episodesData] = await Promise.all([
+    getCachedCollection(user.uid, 'watched'),
+    getCachedCollection(user.uid, 'episodes'),
+  ])
 
   const watchedDates = new Set()
 
-  snap.docs.forEach(d => {
-    const w = d.data()
-    if (w.watchedAt) {
-      watchedDates.add(new Date(w.watchedAt).toLocaleDateString())
-    }
+  Object.values(watchedData).forEach(w => {
+    if (w.watchedAt) watchedDates.add(new Date(w.watchedAt).toLocaleDateString())
   })
-
-  episodesSnap.docs.forEach(d => {
-    const e = d.data()
-    if (e.watchedAt) {
-      watchedDates.add(new Date(e.watchedAt).toLocaleDateString())
-    }
+  Object.values(episodesData).forEach(e => {
+    if (e.watchedAt) watchedDates.add(new Date(e.watchedAt).toLocaleDateString())
   })
 
   const today = new Date()
   const todayStr = today.toLocaleDateString()
-  const yesterdayStr = new Date(today - 86400000).toLocaleDateString()
 
   const activatedToday = watchedDates.has(todayStr)
   const startFrom = activatedToday ? today : new Date(today - 86400000)
 
   let streak = 0
-  let longest = 0
-  let current = 0
   let checking = new Date(startFrom)
 
   while (true) {
@@ -208,22 +232,19 @@ export async function calculateStreak(user) {
     }
   }
 
-  // Calculate longest streak
+  let longest = 0
   const allDates = Array.from(watchedDates)
     .map(d => new Date(d))
     .sort((a, b) => a - b)
 
-  current = 0
+  let current = 0
   for (let i = 0; i < allDates.length; i++) {
     if (i === 0) {
       current = 1
     } else {
       const diff = (allDates[i] - allDates[i-1]) / 86400000
-      if (diff === 1) {
-        current++
-      } else {
-        current = 1
-      }
+      if (diff === 1) current++
+      else current = 1
     }
     if (current > longest) longest = current
   }
@@ -247,8 +268,8 @@ export async function createUserProfile(user, username, acceptedTos) {
       watchlist: true,
       episodeProgress: true
     },
-    createdAt: user.metadata?.creationTime 
-      ? new Date(user.metadata.creationTime).toISOString() 
+    createdAt: user.metadata?.creationTime
+      ? new Date(user.metadata.creationTime).toISOString()
       : new Date().toISOString()
   }, { merge: true })
 }
@@ -298,6 +319,7 @@ export async function exportUserData(user) {
     }
   }
 
+  // Read fresh for export (bypass cache to ensure accuracy)
   const watchedSnap = await getDocs(collection(db, 'users', user.uid, 'watched'))
   exportData.watched = watchedSnap.docs.map(d => {
     const w = d.data()

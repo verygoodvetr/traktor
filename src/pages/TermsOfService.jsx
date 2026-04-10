@@ -91,7 +91,6 @@ function TermsOfService() {
               <li><strong>TMDB</strong> — movie and TV show metadata, posters, episode information</li>
               <li><strong>OMDb</strong> — supplemental episode data for shows with limited TMDB coverage</li>
               <li><strong>Firebase (Google)</strong> — authentication and data storage</li>
-              <li><strong>Resend</strong> — transactional email (account deletion confirmations only)</li>
             </ul>
             <p>
               Your use of Traktor is subject to the terms of these third-party services where applicable.

@@ -114,24 +114,14 @@ function PrivacyPolicy() {
                 information they provide (name, email, profile picture) after you explicitly authorise access.
               </p>
             </div>
-
-            <div className="legal-subsection">
-              <h3>Resend (email)</h3>
-              <p>
-                If you request account deletion, we send a confirmation email via Resend. Your email address
-                is used only to send that specific email and is not stored by Resend beyond what's required
-                for delivery.
-              </p>
-            </div>
           </div>
 
           <div className="legal-section">
             <h2>4. How long we keep your data</h2>
             <p>
-              We keep your data for as long as your account exists. When you delete your account — either
-              immediately via Settings or after the 7-day grace period — all your personal data is permanently
-              and irreversibly deleted from Firestore and Firebase Authentication. There are no backups that
-              retain your data after deletion.
+              We keep your data for as long as your account exists. When you delete your account, 
+              all your personal data is permanently and immediately deleted.
+              There are no backups that retain your data after deletion.
             </p>
           </div>
 
