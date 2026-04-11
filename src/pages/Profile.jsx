@@ -107,7 +107,8 @@ function Profile({ user }) {
       <div style={{ padding: '32px' }}>
         <div>
           <div className="profile-header">
-            <img className="profile-avatar" src={user.photoURL} alt={user.displayName} />
+            <img className="profile-avatar" src={user.photoURL || DEFAULT_AVATAR} alt={user.displayName}
+              onError={e => { e.target.src = DEFAULT_AVATAR }} />
             <div>
               <h1>{user.displayName}</h1>
               <p className="profile-stats">

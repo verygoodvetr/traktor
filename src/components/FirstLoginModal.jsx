@@ -141,7 +141,12 @@ function FirstLoginModal({ user, onComplete }) {
 
             <div className="modal-profile-preview">
               {user.photoURL && (
-                <img src={user.photoURL} alt="" className="modal-avatar" />
+                <img
+                  src={user.photoURL || DEFAULT_AVATAR}
+                  className="modal-avatar"
+                  alt=""
+                  onError={e => { e.target.src = DEFAULT_AVATAR }}
+                />
               )}
               <div>
                 <p className="modal-preview-display">

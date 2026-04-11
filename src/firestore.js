@@ -1,15 +1,13 @@
 import { db } from './firebase'
-import { doc, setDoc, deleteDoc, getDoc, collection, getDocs, writeBatch, query, where } from 'firebase/firestore'
+import { doc, setDoc, deleteDoc, getDoc, collection, getDocs, writeBatch, arrayUnion, serverTimestamp } from 'firebase/firestore'
 
 // ─────────────────────────────────────────────────────────
-// In-memory cache to drastically reduce Firestore reads
-// Cache is per-session and invalidated on writes
+// In-memory cache — reduces Firestore reads dramatically
+// Invalidated on every write operation
 // ─────────────────────────────────────────────────────────
 const _cache = new Map()
 
-function cacheKey(uid, sub) {
-  return `${uid}:${sub}`
-}
+function cacheKey(uid, sub) { return `${uid}:${sub}` }
 
 function invalidateUserCache(uid) {
   for (const key of _cache.keys()) {
@@ -27,6 +25,9 @@ async function getCachedCollection(uid, sub) {
   return result
 }
 
+// ─────────────────────────────────────────────────────────
+// Watch data
+// ─────────────────────────────────────────────────────────
 export async function addToWatched(user, item, watchedAt = 'now') {
   const ref = doc(db, 'users', user.uid, 'watched', `${item.media_type}-${item.id}`)
   const data = {
@@ -36,7 +37,7 @@ export async function addToWatched(user, item, watchedAt = 'now') {
     poster_path: item.poster_path || null,
     rating: null,
     watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt,
-    watchedAtUnknown: watchedAt === 'unknown'
+    watchedAtUnknown: watchedAt === 'unknown',
   }
   await setDoc(ref, data)
   invalidateUserCache(user.uid)
@@ -45,20 +46,14 @@ export async function addToWatched(user, item, watchedAt = 'now') {
 export async function removeFromWatched(user, item) {
   const ref = doc(db, 'users', user.uid, 'watched', `${item.media_type}-${item.id}`)
   await deleteDoc(ref)
-  if (item.media_type === 'tv') {
-    await unmarkAllShowEpisodes(user, item.id)
-  }
+  if (item.media_type === 'tv') await unmarkAllShowEpisodes(user, item.id)
   invalidateUserCache(user.uid)
 }
 
 export async function unmarkAllShowEpisodes(user, showId) {
   const snap = await getDocs(collection(db, 'users', user.uid, 'episodes'))
   const batch = writeBatch(db)
-  snap.forEach(d => {
-    if (d.data().showId === parseInt(showId)) {
-      batch.delete(d.ref)
-    }
-  })
+  snap.forEach(d => { if (d.data().showId === parseInt(showId)) batch.delete(d.ref) })
   await batch.commit()
   invalidateUserCache(user.uid)
 }
@@ -70,7 +65,7 @@ export async function addToWatchlist(user, item) {
     media_type: item.media_type,
     title: item.title || item.name,
     poster_path: item.poster_path || null,
-    addedAt: new Date().toISOString()
+    addedAt: new Date().toISOString(),
   })
   invalidateUserCache(user.uid)
 }
@@ -96,24 +91,18 @@ export async function setRating(user, item, rating) {
   if (snap.exists()) {
     const updated = { ...snap.data(), rating }
     await setDoc(ref, updated)
-    // Update cache directly
     const key = cacheKey(user.uid, 'watched')
-    if (_cache.has(key)) {
-      _cache.get(key)[`${item.media_type}-${item.id}`] = updated
-    }
+    if (_cache.has(key)) _cache.get(key)[`${item.media_type}-${item.id}`] = updated
   }
 }
 
 export async function markEpisodeWatched(user, showId, seasonNum, episodeNum, watchedAt = 'now') {
   const ref = doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${episodeNum}`)
-  const data = {
-    showId,
-    seasonNum,
-    episodeNum,
+  await setDoc(ref, {
+    showId, seasonNum, episodeNum,
     watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt,
-    watchedAtUnknown: watchedAt === 'unknown'
-  }
-  await setDoc(ref, data)
+    watchedAtUnknown: watchedAt === 'unknown',
+  })
   invalidateUserCache(user.uid)
 }
 
@@ -122,29 +111,22 @@ export async function unmarkEpisodeWatched(user, showId, seasonNum, episodeNum) 
   await deleteDoc(ref)
   const showRef = doc(db, 'users', user.uid, 'watched', `tv-${showId}`)
   const showSnap = await getDoc(showRef)
-  if (showSnap.exists()) {
-    await deleteDoc(showRef)
-  }
+  if (showSnap.exists()) await deleteDoc(showRef)
   invalidateUserCache(user.uid)
 }
 
 export async function unmarkSeasonWatched(user, showId, seasonNum, episodes) {
   const batch = writeBatch(db)
   for (const ep of episodes) {
-    const ref = doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${ep.episode_number}`)
-    batch.delete(ref)
+    batch.delete(doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${ep.episode_number}`))
   }
   await batch.commit()
-  const showRef = doc(db, 'users', user.uid, 'watched', `tv-${showId}`)
-  const showSnap = await getDoc(showRef)
-  if (showSnap.exists()) {
-    await deleteDoc(showRef)
-  }
+  const showSnap = await getDoc(doc(db, 'users', user.uid, 'watched', `tv-${showId}`))
+  if (showSnap.exists()) await deleteDoc(doc(db, 'users', user.uid, 'watched', `tv-${showId}`))
   invalidateUserCache(user.uid)
 }
 
 export async function getShowEpisodes(user, showId) {
-  // Use cached episodes and filter client-side
   const allEpisodes = await getCachedCollection(user.uid, 'episodes')
   const episodes = {}
   for (const [id, data] of Object.entries(allEpisodes)) {
@@ -155,14 +137,11 @@ export async function getShowEpisodes(user, showId) {
 
 export async function markSeasonWatched(user, showId, seasonNum, episodes, watchedAt = 'now') {
   const batch = writeBatch(db)
+  const ts = watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt
   for (const ep of episodes) {
-    const ref = doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${ep.episode_number}`)
-    batch.set(ref, {
-      showId,
-      seasonNum,
-      episodeNum: ep.episode_number,
-      watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt,
-      watchedAtUnknown: watchedAt === 'unknown'
+    batch.set(doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${ep.episode_number}`), {
+      showId, seasonNum, episodeNum: ep.episode_number,
+      watchedAt: ts, watchedAtUnknown: watchedAt === 'unknown',
     })
   }
   await batch.commit()
@@ -171,106 +150,76 @@ export async function markSeasonWatched(user, showId, seasonNum, episodes, watch
 
 export async function markAllSeasonsWatched(user, showId, seasons, watchedAt = 'now') {
   const BATCH_SIZE = 100
+  const ts = watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt
   const allOps = []
-
   for (const { seasonNum, episodes } of seasons) {
     for (const ep of episodes) {
       allOps.push({
         ref: doc(db, 'users', user.uid, 'episodes', `tv-${showId}-s${seasonNum}e${ep.episode_number}`),
-        data: {
-          showId,
-          seasonNum,
-          episodeNum: ep.episode_number,
-          watchedAt: watchedAt === 'now' ? new Date().toISOString() : watchedAt === 'unknown' ? null : watchedAt,
-          watchedAtUnknown: watchedAt === 'unknown'
-        }
+        data: { showId, seasonNum, episodeNum: ep.episode_number, watchedAt: ts, watchedAtUnknown: watchedAt === 'unknown' },
       })
     }
   }
-
   for (let i = 0; i < allOps.length; i += BATCH_SIZE) {
-    const chunk = allOps.slice(i, i + BATCH_SIZE)
     const batch = writeBatch(db)
-    chunk.forEach(({ ref, data }) => batch.set(ref, data))
+    allOps.slice(i, i + BATCH_SIZE).forEach(({ ref, data }) => batch.set(ref, data))
     await batch.commit()
   }
   invalidateUserCache(user.uid)
 }
 
+// ─────────────────────────────────────────────────────────
+// Streak (uses cache — no extra reads)
+// ─────────────────────────────────────────────────────────
 export async function calculateStreak(user) {
-  // Use cached data — no extra reads
   const [watchedData, episodesData] = await Promise.all([
     getCachedCollection(user.uid, 'watched'),
     getCachedCollection(user.uid, 'episodes'),
   ])
-
   const watchedDates = new Set()
-
-  Object.values(watchedData).forEach(w => {
-    if (w.watchedAt) watchedDates.add(new Date(w.watchedAt).toLocaleDateString())
-  })
-  Object.values(episodesData).forEach(e => {
-    if (e.watchedAt) watchedDates.add(new Date(e.watchedAt).toLocaleDateString())
-  })
+  Object.values(watchedData).forEach(w => { if (w.watchedAt) watchedDates.add(new Date(w.watchedAt).toLocaleDateString()) })
+  Object.values(episodesData).forEach(e => { if (e.watchedAt) watchedDates.add(new Date(e.watchedAt).toLocaleDateString()) })
 
   const today = new Date()
-  const todayStr = today.toLocaleDateString()
-
-  const activatedToday = watchedDates.has(todayStr)
+  const activatedToday = watchedDates.has(today.toLocaleDateString())
   const startFrom = activatedToday ? today : new Date(today - 86400000)
 
   let streak = 0
   let checking = new Date(startFrom)
-
-  while (true) {
-    const dateStr = checking.toLocaleDateString()
-    if (watchedDates.has(dateStr)) {
-      streak++
-      checking = new Date(checking - 86400000)
-    } else {
-      break
-    }
+  while (watchedDates.has(checking.toLocaleDateString())) {
+    streak++
+    checking = new Date(checking - 86400000)
   }
 
-  let longest = 0
-  const allDates = Array.from(watchedDates)
-    .map(d => new Date(d))
-    .sort((a, b) => a - b)
-
-  let current = 0
+  const allDates = Array.from(watchedDates).map(d => new Date(d)).sort((a, b) => a - b)
+  let longest = 0, current = 0
   for (let i = 0; i < allDates.length; i++) {
-    if (i === 0) {
-      current = 1
-    } else {
-      const diff = (allDates[i] - allDates[i-1]) / 86400000
-      if (diff === 1) current++
-      else current = 1
-    }
+    current = i === 0 ? 1 : ((allDates[i] - allDates[i-1]) / 86400000 === 1 ? current + 1 : 1)
     if (current > longest) longest = current
   }
-
   return { streak, longest, activatedToday }
 }
 
+// ─────────────────────────────────────────────────────────
+// Profile — with history tracking
+// ─────────────────────────────────────────────────────────
 export async function createUserProfile(user, username, acceptedTos) {
   const ref = doc(db, 'users', user.uid)
+  const now = new Date().toISOString()
   await setDoc(ref, {
     uid: user.uid,
     username: username || null,
     displayName: user.displayName,
-    photoURL: user.photoURL,
+    photoURL: user.photoURL || null,
+    customPhotoURL: null,
     email: user.email,
     acceptedTos,
     isPrivate: false,
-    visibleFields: {
-      watchHistory: true,
-      ratings: true,
-      watchlist: true,
-      episodeProgress: true
-    },
-    createdAt: user.metadata?.creationTime
-      ? new Date(user.metadata.creationTime).toISOString()
-      : new Date().toISOString()
+    visibleFields: { watchHistory: true, ratings: true, watchlist: true, episodeProgress: true },
+    createdAt: user.metadata?.creationTime ? new Date(user.metadata.creationTime).toISOString() : now,
+    // History arrays — each entry: { value, changedAt }
+    usernameHistory: username ? [{ value: username, changedAt: now }] : [],
+    displayNameHistory: user.displayName ? [{ value: user.displayName, changedAt: now }] : [],
   }, { merge: true })
 }
 
@@ -285,6 +234,31 @@ export async function updateUserProfile(uid, data) {
   await setDoc(ref, data, { merge: true })
 }
 
+// Update username and record history
+export async function updateUsername(uid, newUsername) {
+  const ref = doc(db, 'users', uid)
+  const now = new Date().toISOString()
+  await setDoc(ref, {
+    username: newUsername,
+    usernameHistory: arrayUnion({ value: newUsername, changedAt: now }),
+  }, { merge: true })
+}
+
+// Update display name and record history
+export async function updateDisplayName(uid, newDisplayName) {
+  const ref = doc(db, 'users', uid)
+  const now = new Date().toISOString()
+  await setDoc(ref, {
+    displayName: newDisplayName,
+    displayNameHistory: arrayUnion({ value: newDisplayName, changedAt: now }),
+  }, { merge: true })
+}
+
+// Update custom profile photo URL
+export async function updateProfilePhoto(uid, photoURL) {
+  await setDoc(doc(db, 'users', uid), { customPhotoURL: photoURL }, { merge: true })
+}
+
 export async function isUsernameTaken(username) {
   const snap = await getDocs(collection(db, 'users'))
   return snap.docs.some(d => d.data().username?.toLowerCase() === username.toLowerCase())
@@ -296,32 +270,36 @@ export async function getUserByUsername(username) {
   return found ? found.data() : null
 }
 
+// ─────────────────────────────────────────────────────────
+// Export — comprehensive, well-structured
+// ─────────────────────────────────────────────────────────
 export async function exportUserData(user) {
-  const exportData = {
-    exportedAt: new Date().toISOString(),
-    profile: {},
-    watched: [],
-    watchlist: [],
-    episodes: []
+  // Always read fresh for export (bypass cache)
+  const [profileSnap, watchedSnap, watchlistSnap, episodesSnap] = await Promise.all([
+    getDoc(doc(db, 'users', user.uid)),
+    getDocs(collection(db, 'users', user.uid, 'watched')),
+    getDocs(collection(db, 'users', user.uid, 'watchlist')),
+    getDocs(collection(db, 'users', user.uid, 'episodes')),
+  ])
+
+  const p = profileSnap.exists() ? profileSnap.data() : {}
+
+  const profile = {
+    uid: p.uid || user.uid,
+    username: p.username || null,
+    displayName: p.displayName || null,
+    email: p.email || null,
+    photoURL: p.customPhotoURL || p.photoURL || null,
+    isPrivate: p.isPrivate || false,
+    visibleFields: p.visibleFields || {},
+    acceptedTos: p.acceptedTos || null,
+    createdAt: p.createdAt || null,
+    linkedProviders: user.providerData?.map(pr => pr.providerId) || [],
+    usernameHistory: p.usernameHistory || [],
+    displayNameHistory: p.displayNameHistory || [],
   }
 
-  const profileSnap = await getDoc(doc(db, 'users', user.uid))
-  if (profileSnap.exists()) {
-    const p = profileSnap.data()
-    exportData.profile = {
-      username: p.username || null,
-      displayName: p.displayName || null,
-      email: p.email || null,
-      createdAt: p.createdAt || null,
-      isPrivate: p.isPrivate || false,
-      acceptedTos: p.acceptedTos || null,
-      linkedProviders: user.providerData?.map(pr => pr.providerId) || []
-    }
-  }
-
-  // Read fresh for export (bypass cache to ensure accuracy)
-  const watchedSnap = await getDocs(collection(db, 'users', user.uid, 'watched'))
-  exportData.watched = watchedSnap.docs.map(d => {
+  const watched = watchedSnap.docs.map(d => {
     const w = d.data()
     return {
       id: w.id,
@@ -330,24 +308,16 @@ export async function exportUserData(user) {
       poster_path: w.poster_path,
       rating: w.rating ?? null,
       watchedAt: w.watchedAt || null,
-      watchedAtUnknown: w.watchedAtUnknown || false
+      watchedAtUnknown: w.watchedAtUnknown || false,
     }
   })
 
-  const watchlistSnap = await getDocs(collection(db, 'users', user.uid, 'watchlist'))
-  exportData.watchlist = watchlistSnap.docs.map(d => {
+  const watchlist = watchlistSnap.docs.map(d => {
     const w = d.data()
-    return {
-      id: w.id,
-      media_type: w.media_type,
-      title: w.title,
-      poster_path: w.poster_path,
-      addedAt: w.addedAt || null
-    }
+    return { id: w.id, media_type: w.media_type, title: w.title, poster_path: w.poster_path, addedAt: w.addedAt || null }
   })
 
-  const episodesSnap = await getDocs(collection(db, 'users', user.uid, 'episodes'))
-  exportData.episodes = episodesSnap.docs.map(d => {
+  const episodes = episodesSnap.docs.map(d => {
     const e = d.data()
     return {
       showId: e.showId,
@@ -355,9 +325,50 @@ export async function exportUserData(user) {
       episodeNum: e.episodeNum,
       watchedAt: e.watchedAt || null,
       watchedAtUnknown: e.watchedAtUnknown || false,
-      rating: e.rating ?? null
+      rating: e.rating ?? null,
     }
   })
 
-  return exportData
+  // Derived stats
+  const movies = watched.filter(i => i.media_type === 'movie')
+  const shows  = watched.filter(i => i.media_type === 'tv')
+  const rated  = watched.filter(i => i.rating != null)
+
+  // Group episodes by show
+  const episodesByShow = {}
+  episodes.forEach(ep => {
+    if (!episodesByShow[ep.showId]) episodesByShow[ep.showId] = []
+    episodesByShow[ep.showId].push(ep)
+  })
+
+  const stats = {
+    totalMoviesWatched: movies.length,
+    totalShowsWatched: shows.length,
+    totalEpisodesWatched: episodes.length,
+    totalRatings: rated.length,
+    averageRating: rated.length > 0
+      ? Math.round((rated.reduce((s, i) => s + i.rating, 0) / rated.length) * 10) / 10
+      : null,
+    watchlistSize: watchlist.length,
+    exportedAt: new Date().toISOString(),
+  }
+
+  return {
+    profile,
+    stats,
+    watched: {
+      movies: movies.sort((a, b) => (b.watchedAt || '').localeCompare(a.watchedAt || '')),
+      shows:  shows.sort((a, b) => (b.watchedAt || '').localeCompare(a.watchedAt || '')),
+    },
+    watchlist: {
+      movies: watchlist.filter(i => i.media_type === 'movie').sort((a, b) => (b.addedAt || '').localeCompare(a.addedAt || '')),
+      shows:  watchlist.filter(i => i.media_type === 'tv').sort((a, b) => (b.addedAt || '').localeCompare(a.addedAt || '')),
+    },
+    ratings: rated.map(i => ({ id: i.id, media_type: i.media_type, title: i.title, rating: i.rating, watchedAt: i.watchedAt }))
+      .sort((a, b) => b.rating - a.rating),
+    episodes: {
+      byShow: episodesByShow,
+      all: episodes.sort((a, b) => (b.watchedAt || '').localeCompare(a.watchedAt || '')),
+    },
+  }
 }

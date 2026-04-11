@@ -20,6 +20,7 @@ import PrivacyPolicy from './pages/PrivacyPolicy'
 import TermsOfService from './pages/TermsOfService'
 import Discovery from './pages/Discovery'
 import Footer from './components/Footer'
+import { DEFAULT_AVATAR } from './pages/Settings'
 
 // ── Streak widget ─────────────────────────────────────────
 function StreakWidget({ streak }) {
@@ -123,7 +124,12 @@ function NavBar({ user, streak, showProviders, setShowProviders, onShowSearch, l
         {user ? (
           <div className="profile-dropdown">
             <div className="profile-trigger" onClick={() => setShowProviders(p => !p)}>
-              <img className="nav-avatar" src={user.photoURL} alt={user.displayName} />
+              <img
+                className="nav-avatar"
+                src={user.photoURL || DEFAULT_AVATAR}
+                alt={user.displayName}
+                onError={e => { e.target.src = DEFAULT_AVATAR }}
+              />
               <span className="nav-username">{user.displayName}</span>
               <span className="dropdown-arrow">▾</span>
             </div>
