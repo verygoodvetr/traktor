@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   getUserProfile, updateUserProfile, updateUsername, updateDisplayName,
   updateProfilePhoto, isUsernameTaken, exportUserData,
+  getCachedCollection, invalidateUserCache,
 } from '../firestore'
 import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
@@ -314,6 +315,9 @@ function Settings({ user }) {
   const [confirmText,    setConfirmText]    = useState('')
   const [deleting,       setDeleting]       = useState(false)
   const [exporting,      setExporting]      = useState(false)
+  const [importing,       setImporting]      = useState(false)
+  const [importProgress,  setImportProgress] = useState({ current: 0, total: 0, status: '' })
+  const [importedCount,   setImportedCount]   = useState({ watched: 0, watchlist: 0 })
   const [profile,        setProfile]        = useState(null)
   const [username,       setUsername]       = useState('')
   const [displayName,    setDisplayName]    = useState(user.displayName || '')
@@ -585,6 +589,186 @@ function Settings({ user }) {
       showToast('Export failed — please try again.', 'error')
     }
     setExporting(false)
+  }
+
+  // ── Import from Trakt ─────────────────────────────────────
+  async function handleTraktImport(username) {
+    if (!username || !username.trim()) {
+      showToast('Please enter your Trakt username.', 'error')
+      return
+    }
+    const cleanUsername = username.trim()
+    setImporting(true)
+    setImportProgress({ current: 0, total: 0, status: 'Connecting to Trakt...' })
+    setImportedCount({ watched: 0, watchlist: 0 })
+
+    try {
+      // Step 1: Fetch watch history (movies + shows)
+      setImportProgress(p => ({ ...p, status: 'Fetching watch history...' }))
+      const historyRes = await fetch(
+        `https://api.trakt.tv/users/${encodeURIComponent(cleanUsername)}/watched?extended=full`,
+        { headers: { 'trakt-api-version': '2', 'trakt-api-key': 'e273ec3d96d04a75a5d63d3c5c6b83395530be6d67a2f5e64d56afd1b8f0c9c6' } }
+      )
+      if (!historyRes.ok) {
+        const errMsg = historyRes.status === 404
+          ? 'Username not found on Trakt.'
+          : historyRes.status === 401
+            ? 'Trakt authorization failed.'
+            : `Trakt error (${historyRes.status}).`
+        showToast(errMsg, 'error')
+        setImporting(false)
+        return
+      }
+      const historyData = await historyRes.json()
+
+      // Step 2: Fetch watchlist
+      setImportProgress(p => ({ ...p, status: 'Fetching watchlist...' }))
+      const watchlistRes = await fetch(
+        `https://api.trakt.tv/users/${encodeURIComponent(cleanUsername)}/watchlist?extended=full`,
+        { headers: { 'trakt-api-version': '2', 'trakt-api-key': 'e273ec3d96d04a75a5d63d3c5c6b83395530be6d67a2f5e64d56afd1b8f0c9c6' } }
+      )
+      const watchlistData = watchlistRes.ok ? await watchlistRes.json() : []
+
+      // Collect all TMDB IDs
+      const moviesToAdd = new Map()   // tmdbId -> item
+      const showsToAdd  = new Map()   // tmdbId -> item
+      const watchlistMovies = new Map()
+      const watchlistShows  = new Map()
+
+      // Get existing watched to avoid duplicates
+      const existingWatched = await getCachedCollection(user.uid, 'watched')
+      const existingWatchlist = await getCachedCollection(user.uid, 'watchlist')
+
+      // Process history
+      let movieCount = 0, showCount = 0
+      for (const section of historyData) {
+        if (section.movie) {
+          const tmdbId = section.movie.ids?.tmdb
+          if (tmdbId && !existingWatched.has(`movie-${tmdbId}`)) {
+            moviesToAdd.set(tmdbId, {
+              id: tmdbId,
+              media_type: 'movie',
+              title: section.movie.title,
+              poster_path: null,
+            })
+            movieCount++
+          }
+        } else if (section.show) {
+          const tmdbId = section.show.ids?.tmdb
+          if (tmdbId && !existingWatched.has(`tv-${tmdbId}`)) {
+            showsToAdd.set(tmdbId, {
+              id: tmdbId,
+              media_type: 'tv',
+              title: section.show.title,
+              poster_path: null,
+            })
+            showCount++
+          }
+        }
+      }
+
+      // Process watchlist
+      for (const item of watchlistData) {
+        if (item.type === 'movie' && item.movie?.ids?.tmdb) {
+          const tmdbId = item.movie.ids.tmdb
+          if (!existingWatchlist.has(`movie-${tmdbId}`)) {
+            watchlistMovies.set(tmdbId, {
+              id: tmdbId,
+              media_type: 'movie',
+              title: item.movie.title,
+              poster_path: null,
+            })
+          }
+        } else if (item.type === 'show' && item.show?.ids?.tmdb) {
+          const tmdbId = item.show.ids.tmdb
+          if (!existingWatchlist.has(`tv-${tmdbId}`)) {
+            watchlistShows.set(tmdbId, {
+              id: tmdbId,
+              media_type: 'tv',
+              title: item.show.title,
+              poster_path: null,
+            })
+          }
+        }
+      }
+
+      const totalToImport = moviesToAdd.size + showsToAdd.size + watchlistMovies.size + watchlistShows.size
+      setImportProgress({ current: 0, total: totalToImport, status: `Found ${totalToImport} items to import` })
+
+      if (totalToImport === 0) {
+        showToast('Your watch history and watchlist are already up to date!')
+        setImporting(false)
+        return
+      }
+
+      // Import movies (watched)
+      let imported = 0
+      const BATCH_SIZE = 100
+      const allMovies = Array.from(moviesToAdd.values())
+      for (let i = 0; i < allMovies.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db)
+        allMovies.slice(i, i + BATCH_SIZE).forEach(item => {
+          batch.set(doc(db, 'users', user.uid, 'watched', `movie-${item.id}`), item)
+        })
+        await batch.commit()
+        imported += Math.min(BATCH_SIZE, allMovies.length - i)
+        setImportProgress({ current: imported, total: totalToImport, status: `Importing movies... ${imported}/${allMovies.length}` })
+      }
+
+      // Import shows (watched)
+      const allShows = Array.from(showsToAdd.values())
+      for (let i = 0; i < allShows.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db)
+        allShows.slice(i, i + BATCH_SIZE).forEach(item => {
+          batch.set(doc(db, 'users', user.uid, 'watched', `tv-${item.id}`), item)
+        })
+        await batch.commit()
+        imported += Math.min(BATCH_SIZE, allShows.length - i)
+        setImportProgress({ current: imported, total: totalToImport, status: `Importing shows... ${imported}/${allShows.length}` })
+      }
+
+      // Import watchlist movies
+      const allWlMovies = Array.from(watchlistMovies.values())
+      for (let i = 0; i < allWlMovies.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db)
+        allWlMovies.slice(i, i + BATCH_SIZE).forEach(item => {
+          batch.set(doc(db, 'users', user.uid, 'watchlist', `movie-${item.id}`), {
+            ...item,
+            addedAt: new Date().toISOString(),
+          })
+        })
+        await batch.commit()
+        imported += Math.min(BATCH_SIZE, allWlMovies.length - i)
+        setImportProgress({ current: imported, total: totalToImport, status: `Importing watchlist... ${imported}/${totalToImport}` })
+      }
+
+      // Import watchlist shows
+      const allWlShows = Array.from(watchlistShows.values())
+      for (let i = 0; i < allWlShows.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db)
+        allWlShows.slice(i, i + BATCH_SIZE).forEach(item => {
+          batch.set(doc(db, 'users', user.uid, 'watchlist', `tv-${item.id}`), {
+            ...item,
+            addedAt: new Date().toISOString(),
+          })
+        })
+        await batch.commit()
+        imported += Math.min(BATCH_SIZE, allWlShows.length - i)
+        setImportProgress({ current: imported, total: totalToImport, status: `Importing watchlist... ${imported}/${totalToImport}` })
+      }
+
+      setImportProgress({ current: totalToImport, total: totalToImport, status: 'Done!' })
+      setImportedCount({
+        watched: moviesToAdd.size + showsToAdd.size,
+        watchlist: watchlistMovies.size + watchlistShows.size,
+      })
+      showToast(`Imported ${moviesToAdd.size + showsToAdd.size} watched and ${watchlistMovies.size + watchlistShows.size} watchlist items!`)
+      invalidateUserCache(user.uid)
+    } catch (err) {
+      console.error('Trakt import error:', err)
+      showToast('Import failed — check your connection and try again.', 'error')
+    }
+    setImporting(false)
   }
 
   function generateReadme(data) {
@@ -1015,6 +1199,63 @@ All items you've rated, sorted highest to lowest.
             <button className="action-btn" onClick={handleExport} disabled={exporting}>
               {exporting ? 'Preparing…' : '↓ Export my data'}
             </button>
+          </SettingsSection>
+
+          {/* ── Import from Trakt ── */}
+          <SettingsSection title="Import from Trakt"
+            description="Import your watch history and watchlist from your Trakt.tv account. Enter your Trakt username to get started.">
+            <div className="trakt-import-section">
+              <p className="settings-desc" style={{ marginBottom: 12 }}>
+                This will import your watch history and watchlist from Trakt.tv. Items already in your library will be skipped.
+              </p>
+              <div className="trakt-import-form">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ opacity: 0.5, fontSize: 18 }}>@</span>
+                  <input
+                    type="text"
+                    id="trakt-username-input"
+                    placeholder="Your Trakt username"
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14 }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !importing) {
+                        handleTraktImport(document.getElementById('trakt-username-input').value)
+                      }
+                    }}
+                  />
+                </div>
+                <button
+                  className="action-btn primary-action"
+                  onClick={() => handleTraktImport(document.getElementById('trakt-username-input').value)}
+                  disabled={importing}
+                  style={{ marginTop: 12 }}
+                >
+                  {importing ? 'Importing...' : 'Import from Trakt'}
+                </button>
+              </div>
+
+              {/* Progress indicator */}
+              {importing && importProgress.total > 0 && (
+                <div className="trakt-import-progress">
+                  <div className="trakt-progress-bar">
+                    <div
+                      className="trakt-progress-fill"
+                      style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="trakt-progress-status">{importProgress.status}</p>
+                  <p className="trakt-progress-count">{importProgress.current} / {importProgress.total}</p>
+                </div>
+              )}
+
+              {importing && importProgress.total === 0 && importProgress.status && (
+                <div className="trakt-import-progress">
+                  <div className="trakt-progress-bar indeterminate">
+                    <div className="trakt-progress-fill" />
+                  </div>
+                  <p className="trakt-progress-status">{importProgress.status}</p>
+                </div>
+              )}
+            </div>
           </SettingsSection>
 
           {/* ── Delete ── */}
