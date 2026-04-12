@@ -11,6 +11,10 @@ import {
 import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
 
+const TMDB_KEY = import.meta.env.VITE_TMDB_KEY
+const TMDB_BASE = 'https://api.themoviedb.org/3'
+const IMAGE_BASE_LARGE = 'https://image.tmdb.org/t/p/original'
+
 // ─────────────────────────────────────────────────────────
 // Social media presets with SVG icons for public profile
 // ─────────────────────────────────────────────────────────
@@ -321,10 +325,14 @@ function Settings({ user }) {
 
   // Public profile customization
   const [profileBackground, setProfileBackground] = useState('default')
+  const [customBackground, setCustomBackground] = useState(null) // { id, image, label }
   const [socialLinks, setSocialLinks] = useState({ instagram: '', twitter: '', youtube: '', facebook: '' })
   const [showEmail, setShowEmail] = useState(false)
   const [website, setWebsite] = useState('')
   const [showPublicSection, setShowPublicSection] = useState(false)
+  const [bgSearchQuery, setBgSearchQuery] = useState('')
+  const [bgSearchResults, setBgSearchResults] = useState([])
+  const [bgSearchLoading, setBgSearchLoading] = useState(false)
 
   // Display prefs — read from localStorage on mount
   // Auto-mark show is now always enabled (removed toggle)
@@ -359,6 +367,21 @@ function Settings({ user }) {
       setVisibleFields(p.visibleFields || { watchHistory: true, ratings: true, watchlist: true, episodeProgress: true })
       // Load public profile customization
       setProfileBackground(p.profileBackground || 'default')
+      // Load custom background if it's a TMDB backdrop
+      if (p.profileBackground?.startsWith('tmdb_')) {
+        const parts = p.profileBackground.split('_')
+        if (parts.length >= 2) {
+          const mediaId = parts[1]
+          const mediaType = p.customBgMediaType || 'movie'
+          setCustomBackground({
+            id: p.profileBackground,
+            image: `https://image.tmdb.org/t/p/original${p.customBgPath || ''}`,
+            label: p.customBgLabel || 'Custom background'
+          })
+        }
+      } else {
+        setCustomBackground(null)
+      }
       setSocialLinks(p.socialLinks || { instagram: '', twitter: '', youtube: '', facebook: '' })
       setShowEmail(p.showEmail || false)
       setWebsite(p.website || '')
@@ -370,14 +393,75 @@ function Settings({ user }) {
     if (!profile) return
     clearTimeout(privacyTimer.current)
     privacyTimer.current = setTimeout(() => {
-      updateUserProfile(user.uid, { isPrivate, visibleFields, profileBackground, socialLinks, showEmail, website })
+      const updateData = { isPrivate, visibleFields, profileBackground, socialLinks, showEmail, website }
+      // Include custom background metadata
+      if (customBackground) {
+        updateData.customBgPath = customBackground.image?.replace('https://image.tmdb.org/t/p/original', '') || ''
+        updateData.customBgLabel = customBackground.label || 'Custom'
+        updateData.customBgMediaType = customBackground.mediaType || 'movie'
+      } else {
+        updateData.customBgPath = null
+        updateData.customBgLabel = null
+        updateData.customBgMediaType = null
+      }
+      updateUserProfile(user.uid, updateData)
     }, 800)
     return () => clearTimeout(privacyTimer.current)
-  }, [isPrivate, visibleFields, profileBackground, socialLinks, showEmail, website])
+  }, [isPrivate, visibleFields, profileBackground, customBackground, socialLinks, showEmail, website])
 
   function setPref(key, val, setter) {
     setter(val)
     localStorage.setItem(key, String(val))
+  }
+
+  // ── Background search ────────────────────────────────────
+  async function searchBgMedia(query) {
+    if (!query.trim()) { setBgSearchResults([]); return }
+    setBgSearchLoading(true)
+    try {
+      const res = await fetch(
+        `${TMDB_BASE}/search/multi?api_key=${TMDB_KEY}&language=en-US&query=${encodeURIComponent(query)}&page=1&include_adult=false`
+      )
+      const data = await res.json()
+      // Filter to only movies and TV shows with backdrop images
+      const results = (data.results || []).filter(r =>
+        (r.media_type === 'movie' || r.media_type === 'tv') && r.backdrop_path
+      ).slice(0, 12)
+      setBgSearchResults(results)
+    } catch (e) {
+      console.error(e)
+      setBgSearchResults([])
+    }
+    setBgSearchLoading(false)
+  }
+
+  function selectBgImage(item) {
+    const newCustomBg = {
+      id: `tmdb_${item.id}`,
+      image: IMAGE_BASE_LARGE + item.backdrop_path,
+      label: item.title || item.name,
+      mediaType: item.media_type
+    }
+    setCustomBackground(newCustomBg)
+    setProfileBackground(newCustomBg.id)
+    setBgSearchQuery('')
+    setBgSearchResults([])
+    showToast('Background set!')
+  }
+
+  function clearCustomBg() {
+    setCustomBackground(null)
+    setProfileBackground('default')
+    showToast('Background cleared')
+  }
+
+  // Auto-fix website URL
+  function handleWebsiteChange(value) {
+    let fixedUrl = value.trim()
+    if (fixedUrl && !fixedUrl.match(/^https?:\/\//)) {
+      fixedUrl = 'https://' + fixedUrl
+    }
+    setWebsite(fixedUrl)
   }
 
   function setSpoilerModePref(val) {
@@ -552,6 +636,13 @@ traktor-export/
 - createdAt: Account creation date (ISO 8601)
 - usernameHistory: Array of { value, changedAt } — username change log
 - displayNameHistory: Array of { value, changedAt } — display name change log
+- profileBackground: Background ID ('default' or 'tmdb_{id}' for custom)
+- customBgPath: TMDB backdrop path for custom backgrounds
+- customBgLabel: Label for custom background (movie/show name)
+- customBgMediaType: 'movie' or 'tv' for custom backgrounds
+- socialLinks: Object with social media usernames { instagram, twitter, youtube, facebook }
+- showEmail: Whether email is shown on public profile
+- website: Your website URL
 
 ### watched/movies.json & watched/shows.json
 - id: TMDB ID
@@ -574,6 +665,7 @@ All items you've rated, sorted highest to lowest.
 - TMDB IDs can be used to look up metadata at https://www.themoviedb.org
 - All timestamps are in ISO 8601 format (UTC)
 - This export does not include images — use poster_path with https://image.tmdb.org/t/p/w300{poster_path}
+- Custom profile backgrounds: Use customBgPath with https://image.tmdb.org/t/p/original{customBgPath}
 `
   }
 
@@ -731,11 +823,25 @@ All items you've rated, sorted highest to lowest.
             {/* Profile background */}
             <div className="public-profile-field">
               <label className="settings-field-label">Profile background</label>
+
+              {/* Custom background preview */}
+              {customBackground && (
+                <div className="custom-bg-preview">
+                  <img src={customBackground.image} alt={customBackground.label} />
+                  <div className="custom-bg-info">
+                    <span>{customBackground.label}</span>
+                    <button className="clear-bg-btn" onClick={clearCustomBg}>Clear</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Preset backgrounds */}
+              <label className="settings-sub-label">Quick picks</label>
               <div className="background-picker">
                 {MOVIE_BACKGROUNDS.map(bg => (
                   <button key={bg.id}
-                    className={`background-option${profileBackground === bg.id ? ' selected' : ''}`}
-                    onClick={() => setProfileBackground(bg.id)}
+                    className={`background-option${profileBackground === bg.id && !customBackground ? ' selected' : ''}`}
+                    onClick={() => { setCustomBackground(null); setProfileBackground(bg.id); showToast('Background set!') }}
                     title={bg.label}>
                     {bg.image ? (
                       <img src={bg.image} alt={bg.label} style={{ width: 40, height: 40, borderRadius: 4, objectFit: 'cover' }} />
@@ -745,6 +851,34 @@ All items you've rated, sorted highest to lowest.
                   </button>
                 ))}
               </div>
+
+              {/* Search for custom background */}
+              <label className="settings-sub-label" style={{ marginTop: 12 }}>Search for a movie or show</label>
+              <div className="bg-search-container">
+                <input
+                  type="text"
+                  value={bgSearchQuery}
+                  onChange={e => { setBgSearchQuery(e.target.value); searchBgMedia(e.target.value) }}
+                  placeholder="Search movies or TV shows..."
+                  className="bg-search-input"
+                />
+                {bgSearchLoading && <span className="bg-search-loading">Searching...</span>}
+              </div>
+
+              {/* Search results */}
+              {bgSearchResults.length > 0 && (
+                <div className="bg-search-results">
+                  {bgSearchResults.map(item => (
+                    <button key={`${item.media_type}-${item.id}`} className="bg-search-result" onClick={() => selectBgImage(item)}>
+                      <img src={`https://image.tmdb.org/t/p/w300${item.backdrop_path}`} alt={item.title || item.name} />
+                      <div className="bg-result-info">
+                        <span className="bg-result-title">{item.title || item.name}</span>
+                        <span className="bg-result-type">{item.media_type === 'movie' ? 'Movie' : 'TV Show'}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Social links */}
@@ -776,8 +910,8 @@ All items you've rated, sorted highest to lowest.
               <label className="settings-field-label">Website</label>
               <input type="text"
                 value={website}
-                onChange={e => setWebsite(e.target.value)}
-                placeholder="https://yoursite.com"
+                onChange={e => handleWebsiteChange(e.target.value)}
+                placeholder="yoursite.com (https:// added automatically)"
                 style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
             </div>
           </SettingsSection>

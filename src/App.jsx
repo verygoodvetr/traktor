@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
 import { AnimatePresence } from 'framer-motion'
 import { auth, googleProvider, microsoftProvider } from './firebase'
-import { ToastContainer } from './components/Toast'
+import { ToastContainer, showToast } from './components/Toast'
 import { getUserProfile, calculateStreak } from './firestore'
 import FirstLoginModal from './components/FirstLoginModal'
 import SearchOverlay from './components/SearchOverlay'
@@ -225,7 +225,7 @@ function App() {
       // Handle specific Firebase Auth errors
       const errorMessages = {
         'auth/user-disabled': 'This account has been disabled. If you believe this is a mistake, please email traktorapp@gmail.com',
-        'auth/operation-not-allowed': 'Sign-up is currently disabled. Please try again later.',
+        'auth/operation-not-allowed': 'Sign-in failed. Please try again.',
         'auth/invalid-email': 'Invalid email address.',
         'auth/wrong-password': 'Incorrect password.',
         'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
@@ -234,7 +234,7 @@ function App() {
         'auth/network-request-failed': 'Network error. Please check your connection.',
       }
       const message = errorMessages[err.code] || 'Sign-in failed. Please try again.'
-      alert(message) // Using alert for now - could be replaced with a toast component
+      showToast(message, 'error')
     }
   }
 

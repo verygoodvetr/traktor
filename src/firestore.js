@@ -297,6 +297,14 @@ export async function exportUserData(user) {
     linkedProviders: user.providerData?.map(pr => pr.providerId) || [],
     usernameHistory: p.usernameHistory || [],
     displayNameHistory: p.displayNameHistory || [],
+    // Public profile customization
+    profileBackground: p.profileBackground || 'default',
+    customBgPath: p.customBgPath || null,
+    customBgLabel: p.customBgLabel || null,
+    customBgMediaType: p.customBgMediaType || null,
+    socialLinks: p.socialLinks || {},
+    showEmail: p.showEmail || false,
+    website: p.website || null,
   }
 
   const watched = watchedSnap.docs.map(d => {

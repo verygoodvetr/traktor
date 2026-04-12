@@ -88,11 +88,22 @@ function PublicProfile() {
   const showEmail = profile.showEmail || false
   const website = profile.website || ''
 
-  // Get background style
-  const bgPreset = MOVIE_BACKGROUNDS.find(b => b.id === profileBackground) || MOVIE_BACKGROUNDS[0]
-  const bgStyle = bgPreset.image
-    ? { backgroundImage: `url(${bgPreset.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : { background: bgPreset.gradient }
+  // Get background style - check for custom TMDB background first
+  let bgStyle = {}
+  if (profileBackground.startsWith('tmdb_')) {
+    // Custom TMDB backdrop
+    const bgPath = profile.customBgPath || ''
+    bgStyle = {
+      backgroundImage: `url(https://image.tmdb.org/t/p/original${bgPath})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center'
+    }
+  } else {
+    const bgPreset = MOVIE_BACKGROUNDS.find(b => b.id === profileBackground) || MOVIE_BACKGROUNDS[0]
+    bgStyle = bgPreset.image
+      ? { backgroundImage: `url(${bgPreset.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+      : { background: bgPreset.gradient }
+  }
 
   const watched = userData ? Object.values(userData.watched || {}) : []
   const watchlist = userData ? Object.values(userData.watchlist || {}) : []
@@ -108,11 +119,12 @@ function PublicProfile() {
   const activeSocialLinks = SOCIAL_PRESETS.filter(s => socialLinks[s.key])
 
   return (
-    <PageWrapper>
-      <div style={{ padding: '32px' }}>
-        <div className="detail-page">
-          {/* Custom header with background */}
-          <div className="pub-profile-header" style={bgStyle}>
+    <div className="pub-profile-page" style={bgStyle}>
+      <div className="pub-profile-overlay" />
+      <PageWrapper>
+        <div className="pub-profile-content">
+          <div className="detail-page">
+            {/* Profile header info */}
             <div className="pub-profile-header-content">
               {profile.photoURL && (
                 <img className="pub-profile-avatar" src={profile.photoURL} alt={profile.displayName} />
@@ -131,98 +143,98 @@ function PublicProfile() {
                 )}
               </div>
             </div>
-          </div>
 
-          {/* Social links and contact */}
-          {(activeSocialLinks.length > 0 || showEmail || website) && (
-            <div className="pub-profile-contact">
-              {showEmail && profile.email && (
-                <a href={`mailto:${profile.email}`} className="pub-profile-contact-item">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
-                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                    <polyline points="22,6 12,13 2,6"/>
-                  </svg>
-                  {profile.email}
-                </a>
-              )}
-              {website && (
-                <a href={website} target="_blank" rel="noopener noreferrer" className="pub-profile-contact-item">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="2" y1="12" x2="22" y2="12"/>
-                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                  </svg>
-                  {website.replace(/^https?:\/\//, '')}
-                </a>
-              )}
-              {activeSocialLinks.map(s => (
-                <a key={s.key}
-                  href={s.key === 'instagram' ? `https://instagram.com/${socialLinks[s.key]}` :
-                        s.key === 'twitter' ? `https://x.com/${socialLinks[s.key]}` :
-                        s.key === 'youtube' ? `https://youtube.com/${socialLinks[s.key]}` :
-                        socialLinks[s.key]}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="pub-profile-contact-item"
-                  style={{ color: s.color }}>
-                  <span dangerouslySetInnerHTML={{ __html: s.icon }} />
-                  {s.label}
-                </a>
-              ))}
-            </div>
-          )}
-
-          {isPrivate ? (
-            <div className="private-profile">
-              <p>🔒 This profile is private.</p>
-            </div>
-          ) : (
-            <>
-              {tabs.length > 0 && (
-                <div className="filters">
-                  {tabs.map(t => (
-                    <button
-                      key={t.key}
-                      className={tab === t.key ? 'active' : ''}
-                      onClick={() => setTab(t.key)}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="results-grid">
-                {items.map(item => (
-                  <div
-                    className="media-card"
-                    key={`${item.media_type}-${item.id}`}
-                    onClick={() => navigate(`/movie/${item.media_type}/${item.id}`)}
-                  >
-                    <div className="media-card-img-wrap">
-                      {item.poster_path ? (
-                        <img src={IMAGE_BASE + item.poster_path} alt={item.title} />
-                      ) : (
-                        <div className="no-poster">No Image</div>
-                      )}
-                      <span className="media-type-badge">
-                        {item.media_type === 'movie' ? 'Movie' : 'TV'}
-                      </span>
-                      {tab === 'watched' && item.rating && visible.ratings && (
-                        <span className="card-rating">{item.rating}/10</span>
-                      )}
-                    </div>
-                    <div className="media-card-info">
-                      <p className="media-title">{item.title}</p>
-                    </div>
-                  </div>
+            {/* Social links and contact */}
+            {(activeSocialLinks.length > 0 || showEmail || website) && (
+              <div className="pub-profile-contact">
+                {showEmail && profile.email && (
+                  <a href={`mailto:${profile.email}`} className="pub-profile-contact-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                      <polyline points="22,6 12,13 2,6"/>
+                    </svg>
+                    {profile.email}
+                  </a>
+                )}
+                {website && (
+                  <a href={website} target="_blank" rel="noopener noreferrer" className="pub-profile-contact-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="2" y1="12" x2="22" y2="12"/>
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                    </svg>
+                    {website.replace(/^https?:\/\//, '')}
+                  </a>
+                )}
+                {activeSocialLinks.map(s => (
+                  <a key={s.key}
+                    href={s.key === 'instagram' ? `https://instagram.com/${socialLinks[s.key]}` :
+                          s.key === 'twitter' ? `https://x.com/${socialLinks[s.key]}` :
+                          s.key === 'youtube' ? `https://youtube.com/${socialLinks[s.key]}` :
+                          socialLinks[s.key]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="pub-profile-contact-item"
+                    style={{ color: s.color }}>
+                    <span dangerouslySetInnerHTML={{ __html: s.icon }} />
+                    {s.label}
+                  </a>
                 ))}
               </div>
-            </>
-          )}
+            )}
+
+            {isPrivate ? (
+              <div className="private-profile">
+                <p>🔒 This profile is private.</p>
+              </div>
+            ) : (
+              <>
+                {tabs.length > 0 && (
+                  <div className="filters">
+                    {tabs.map(t => (
+                      <button
+                        key={t.key}
+                        className={tab === t.key ? 'active' : ''}
+                        onClick={() => setTab(t.key)}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="results-grid">
+                  {items.map(item => (
+                    <div
+                      className="media-card"
+                      key={`${item.media_type}-${item.id}`}
+                      onClick={() => navigate(`/movie/${item.media_type}/${item.id}`)}
+                    >
+                      <div className="media-card-img-wrap">
+                        {item.poster_path ? (
+                          <img src={IMAGE_BASE + item.poster_path} alt={item.title} />
+                        ) : (
+                          <div className="no-poster">No Image</div>
+                        )}
+                        <span className="media-type-badge">
+                          {item.media_type === 'movie' ? 'Movie' : 'TV'}
+                        </span>
+                        {tab === 'watched' && item.rating && visible.ratings && (
+                          <span className="card-rating">{item.rating}/10</span>
+                        )}
+                      </div>
+                      <div className="media-card-info">
+                        <p className="media-title">{item.title}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
-    </PageWrapper>
+      </PageWrapper>
+    </div>
   )
 }
 

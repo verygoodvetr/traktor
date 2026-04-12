@@ -4046,24 +4046,6 @@ button.watchlist-blocked {
 }
 
 /* ═══════════════════════════════════════════════
-   SETTINGS — social icons
-   ═══════════════════════════════════════════════ */
-
-.social-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.social-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-/* ═══════════════════════════════════════════════
    SETTINGS — background picker
    ═══════════════════════════════════════════════ */
 
@@ -4151,4 +4133,207 @@ button.watchlist-blocked {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* ═══════════════════════════════════════════════
+   SOCIAL MEDIA ICONS — white background
+   ═══════════════════════════════════════════════ */
+
+.social-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  background: white;
+  border-radius: 50%;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.social-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ═══════════════════════════════════════════════
+   PUBLIC PROFILE — full page background
+   ═══════════════════════════════════════════════ */
+
+.pub-profile-page {
+  min-height: 100vh;
+  position: relative;
+  background-attachment: fixed;
+}
+
+.pub-profile-overlay {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(10, 10, 15, 0.6) 0%, rgba(10, 10, 15, 0.9) 100%);
+  z-index: 0;
+}
+
+.pub-profile-content {
+  position: relative;
+  z-index: 1;
+  padding: 32px;
+}
+
+.pub-profile-content .detail-page {
+  background: transparent;
+}
+
+/* ═══════════════════════════════════════════════
+   PUBLIC PROFILE — header info
+   ═══════════════════════════════════════════════ */
+
+.pub-profile-header-content {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+
+/* ═══════════════════════════════════════════════
+   BACKGROUND SEARCH — settings
+   ═══════════════════════════════════════════════ */
+
+.settings-sub-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text3);
+  margin-bottom: 8px;
+  margin-top: 12px;
+}
+
+.custom-bg-preview {
+  position: relative;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.custom-bg-preview img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius);
+}
+
+.custom-bg-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.custom-bg-info span {
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.clear-bg-btn {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.clear-bg-btn:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+.bg-search-container {
+  position: relative;
+}
+
+.bg-search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.bg-search-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.bg-search-loading {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  font-size: 12px;
+}
+
+.bg-search-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.bg-search-result {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+  text-align: left;
+}
+
+.bg-search-result:hover {
+  border-color: var(--primary);
+  transform: scale(1.02);
+}
+
+.bg-search-result img {
+  width: 100%;
+  height: 80px;
+  object-fit: cover;
+}
+
+.bg-result-info {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bg-result-title {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bg-result-type {
+  font-size: 11px;
+  color: var(--text3);
+  text-transform: uppercase;
 }
