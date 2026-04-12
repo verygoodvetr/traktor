@@ -12,6 +12,29 @@ import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
 
 // ─────────────────────────────────────────────────────────
+// Social media presets for public profile
+// ─────────────────────────────────────────────────────────
+const SOCIAL_PRESETS = [
+  { key: 'instagram', label: 'Instagram', placeholder: 'username', icon: '📷' },
+  { key: 'twitter', label: 'X / Twitter', placeholder: 'username', icon: '𝕏' },
+  { key: 'youtube', label: 'YouTube', placeholder: 'channel ID or @username', icon: '▶️' },
+  { key: 'facebook', label: 'Facebook', placeholder: 'profile or page URL', icon: 'f' },
+]
+
+const PROFILE_BACKGROUNDS = [
+  { id: 'default', label: 'Default', gradient: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)' },
+  { id: 'cosmic', label: 'Cosmic', gradient: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)' },
+  { id: 'sunset', label: 'Sunset', gradient: 'linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)' },
+  { id: 'ocean', label: 'Ocean', gradient: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)' },
+  { id: 'forest', label: 'Forest', gradient: 'linear-gradient(135deg, #134e5e 0%, #71b280 100%)' },
+  { id: 'purple', label: 'Purple', gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+  { id: 'fire', label: 'Fire', gradient: 'linear-gradient(135deg, #f12711 0%, #f5af19 100%)' },
+  { id: 'mint', label: 'Mint', gradient: 'linear-gradient(135deg, #43cea2 0%, #185a9d 100%)' },
+  { id: 'midnight', label: 'Midnight', gradient: 'linear-gradient(135deg, #232526 0%, #414345 100%)' },
+  { id: 'candy', label: 'Candy', gradient: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)' },
+]
+
+// ─────────────────────────────────────────────────────────
 // Blocked username patterns — checks full string AND substrings
 // ─────────────────────────────────────────────────────────
 const BLOCKED_EXACT = new Set([
@@ -86,9 +109,8 @@ export function getDisplayPrefs() {
     showSeconds:  localStorage.getItem('traktor_seconds')  === 'true',
     dateFormat:   localStorage.getItem('traktor_datefmt')  || 'DD.MM.YYYY',
     compactCards: localStorage.getItem('traktor_compact')  === 'true',
-    reducedMotion:localStorage.getItem('traktor_reduced')  === 'true',
     spoilerMode:  localStorage.getItem('traktor_spoilers') === 'true',
-    autoMarkShow: localStorage.getItem('traktor_automark') === 'true',
+    autoMarkShow: true, // Always enabled now
     defaultTab:   localStorage.getItem('traktor_deftab')   || 'movies',
     cardSize:     localStorage.getItem('traktor_cardsize') || 'medium',
   }
@@ -158,10 +180,10 @@ function HistoryList({ items, dateFormat, use12h, showSeconds }) {
 // ─────────────────────────────────────────────────────────
 // Profile photo picker
 // ─────────────────────────────────────────────────────────
-function PhotoPicker({ currentPhoto, onSave, uid }) {
+function PhotoPicker({ currentPhoto, onSave, uid, user }) {
   const [url, setUrl] = useState('')
   const [saving, setSaving] = useState(false)
-  const [mode, setMode] = useState('url') // 'url' | 'picker'
+  const [mode, setMode] = useState('picker') // 'picker' | 'url'
 
   const AVATAR_OPTIONS = [
     // Simple colored SVG avatars (no external dependency)
@@ -174,6 +196,11 @@ function PhotoPicker({ currentPhoto, onSave, uid }) {
     { id: 'gray',   src: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='%23374151'/%3E%3Ccircle cx='40' cy='32' r='16' fill='rgba(255,255,255,0.5)'/%3E%3Cellipse cx='40' cy='70' rx='26' ry='18' fill='rgba(255,255,255,0.5)'/%3E%3C/svg%3E` },
     { id: 'default', src: DEFAULT_AVATAR },
   ]
+
+  // Get linked providers
+  const linkedProviders = user?.providerData?.map(p => p.providerId) || []
+  const googlePhoto = linkedProviders.includes('google.com') ? user?.reloadUserInfo?.photoUrl : null
+  const microsoftPhoto = linkedProviders.includes('microsoft.com') ? user?.reloadUserInfo?.photoUrl : null
 
   async function save(photoURL) {
     setSaving(true)
@@ -198,14 +225,36 @@ function PhotoPicker({ currentPhoto, onSave, uid }) {
       </div>
 
       {mode === 'picker' && (
-        <div className="avatar-grid">
-          {AVATAR_OPTIONS.map(av => (
-            <button key={av.id} className={`avatar-option${currentPhoto === av.src ? ' selected' : ''}`}
-              onClick={() => save(av.src)} disabled={saving}>
-              <img src={av.src} alt={av.id} />
-            </button>
-          ))}
-        </div>
+        <>
+          {/* Import from linked accounts */}
+          {(googlePhoto || microsoftPhoto) && (
+            <div className="import-from-account">
+              <p className="settings-field-label" style={{ marginBottom: 8 }}>Import from linked account</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {googlePhoto && (
+                  <button className="import-account-btn" onClick={() => save(googlePhoto)} disabled={saving}>
+                    <span style={{ fontSize: 18 }}>G</span>
+                    <span>Google</span>
+                  </button>
+                )}
+                {microsoftPhoto && (
+                  <button className="import-account-btn" onClick={() => save(microsoftPhoto)} disabled={saving}>
+                    <span style={{ fontSize: 18 }}>M</span>
+                    <span>Microsoft</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="avatar-grid">
+            {AVATAR_OPTIONS.map(av => (
+              <button key={av.id} className={`avatar-option${currentPhoto === av.src ? ' selected' : ''}`}
+                onClick={() => save(av.src)} disabled={saving}>
+                <img src={av.src} alt={av.id} />
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {mode === 'url' && (
@@ -243,29 +292,29 @@ function Settings({ user }) {
   const [visibleFields,  setVisibleFields]  = useState({ watchHistory: true, ratings: true, watchlist: true, episodeProgress: true })
   const [showHistory,    setShowHistory]    = useState(false)
 
+  // Public profile customization
+  const [profileBackground, setProfileBackground] = useState('default')
+  const [socialLinks, setSocialLinks] = useState({ instagram: '', twitter: '', youtube: '', facebook: '' })
+  const [showEmail, setShowEmail] = useState(false)
+  const [website, setWebsite] = useState('')
+  const [showPublicSection, setShowPublicSection] = useState(false)
+
   // Display prefs — read from localStorage on mount
+  // Auto-mark show is now always enabled (removed toggle)
   const [use12h,        setUse12h]        = useState(() => localStorage.getItem('traktor_12h')      === 'true')
   const [showSeconds,   setShowSeconds]   = useState(() => localStorage.getItem('traktor_seconds')  === 'true')
   const [dateFormat,    setDateFormat]    = useState(() => localStorage.getItem('traktor_datefmt')  || 'DD.MM.YYYY')
   const [compactCards,  setCompactCards]  = useState(() => localStorage.getItem('traktor_compact')  === 'true')
-  const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem('traktor_reduced')  === 'true')
   const [spoilerMode,   setSpoilerMode]   = useState(() => localStorage.getItem('traktor_spoilers') === 'true')
-  const [autoMarkShow,  setAutoMarkShow]  = useState(() => localStorage.getItem('traktor_automark') === 'true')
   const [cardSize,      setCardSize]      = useState(() => localStorage.getItem('traktor_cardsize') || 'medium')
+
+  // Always enable auto-mark show
+  useEffect(() => { localStorage.setItem('traktor_automark', 'true') }, [])
 
   const privacyTimer = useRef(null)
   const navigate     = useNavigate()
 
-  // Apply preferences to DOM immediately on load
-  useEffect(() => {
-    if (reducedMotion) document.documentElement.classList.add('reduced-motion')
-    else document.documentElement.classList.remove('reduced-motion')
-  }, [reducedMotion])
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-card-size', cardSize)
-  }, [cardSize])
-
+  // Apply spoiler mode to DOM immediately on load
   useEffect(() => {
     if (spoilerMode) document.documentElement.classList.add('spoiler-mode')
     else document.documentElement.classList.remove('spoiler-mode')
@@ -281,28 +330,27 @@ function Settings({ user }) {
       setPhotoURL(p.customPhotoURL || p.photoURL || user.photoURL || DEFAULT_AVATAR)
       setIsPrivate(p.isPrivate || false)
       setVisibleFields(p.visibleFields || { watchHistory: true, ratings: true, watchlist: true, episodeProgress: true })
+      // Load public profile customization
+      setProfileBackground(p.profileBackground || 'default')
+      setSocialLinks(p.socialLinks || { instagram: '', twitter: '', youtube: '', facebook: '' })
+      setShowEmail(p.showEmail || false)
+      setWebsite(p.website || '')
     })
   }, [user])
 
-  // Auto-save privacy settings
+  // Auto-save public profile customization
   useEffect(() => {
     if (!profile) return
     clearTimeout(privacyTimer.current)
     privacyTimer.current = setTimeout(() => {
-      updateUserProfile(user.uid, { isPrivate, visibleFields })
+      updateUserProfile(user.uid, { isPrivate, visibleFields, profileBackground, socialLinks, showEmail, website })
     }, 800)
     return () => clearTimeout(privacyTimer.current)
-  }, [isPrivate, visibleFields]) // eslint-disable-line
+  }, [isPrivate, visibleFields, profileBackground, socialLinks, showEmail, website])
 
   function setPref(key, val, setter) {
     setter(val)
     localStorage.setItem(key, String(val))
-  }
-
-  function setReducedMotionPref(val) {
-    setPref('traktor_reduced', val, setReducedMotion)
-    if (val) document.documentElement.classList.add('reduced-motion')
-    else     document.documentElement.classList.remove('reduced-motion')
   }
 
   function setSpoilerModePref(val) {
@@ -570,7 +618,7 @@ All items you've rated, sorted highest to lowest.
               />
               <div style={{ flex: 1 }}>
                 <p className="pref-label" style={{ marginBottom: 10 }}>Profile photo</p>
-                <PhotoPicker currentPhoto={photoURL} uid={user.uid} onSave={url => setPhotoURL(url)} />
+                <PhotoPicker currentPhoto={photoURL} uid={user.uid} onSave={url => setPhotoURL(url)} user={user} />
               </div>
             </div>
 
@@ -620,6 +668,89 @@ All items you've rated, sorted highest to lowest.
             )}
           </SettingsSection>
 
+          {/* ── Public Profile ── */}
+          <SettingsSection title="Public profile" description="Customize how your public profile looks. Changes save automatically.">
+            {profile?.username ? (
+              <div className="public-profile-link-box">
+                <p style={{ marginBottom: 8, color: 'var(--text3)' }}>Your public profile URL:</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <a href={`/user/${profile.username}`} target="_blank" rel="noopener noreferrer"
+                    style={{ color: 'var(--primary)', fontFamily: 'monospace', fontSize: 14, wordBreak: 'break-all' }}>
+                    {window.location.origin}/user/{profile.username}
+                  </a>
+                  <button className="action-btn" onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/user/${profile.username}`)
+                    showToast('Link copied!')
+                  }}>Copy</button>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <button className="action-btn" onClick={() => {
+                    if (navigator.share) {
+                      navigator.share({ title: `${profile.displayName || profile.username}'s Profile`,
+                        url: `${window.location.origin}/user/${profile.username}` })
+                    } else {
+                      navigator.clipboard.writeText(`${window.location.origin}/user/${profile.username}`)
+                      showToast('Link copied!')
+                    }
+                  }}>Share profile</button>
+                </div>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text3)', fontSize: 13 }}>Set a username above to enable your public profile.</p>
+            )}
+
+            <div className="settings-divider" />
+
+            {/* Profile background */}
+            <div className="public-profile-field">
+              <label className="settings-field-label">Profile background</label>
+              <div className="background-picker">
+                {PROFILE_BACKGROUNDS.map(bg => (
+                  <button key={bg.id}
+                    className={`background-option${profileBackground === bg.id ? ' selected' : ''}`}
+                    onClick={() => setProfileBackground(bg.id)}
+                    title={bg.label}>
+                    <div style={{ background: bg.gradient, width: 40, height: 40, borderRadius: 4 }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Social links */}
+            <div className="settings-field" style={{ marginTop: 16 }}>
+              <label className="settings-field-label">Social media links</label>
+              <div className="social-links-grid">
+                {SOCIAL_PRESETS.map(s => (
+                  <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 24, fontSize: 16 }}>{s.icon}</span>
+                    <input type="text"
+                      value={socialLinks[s.key] || ''}
+                      onChange={e => setSocialLinks(prev => ({ ...prev, [s.key]: e.target.value }))}
+                      placeholder={s.placeholder}
+                      style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Show email */}
+            <div style={{ marginTop: 16 }}>
+              <PrefRow label="Show email on profile" desc="Display your email on your public profile">
+                <Toggle checked={showEmail} onChange={setShowEmail} />
+              </PrefRow>
+            </div>
+
+            {/* Website */}
+            <div className="settings-field" style={{ marginTop: 16 }}>
+              <label className="settings-field-label">Website</label>
+              <input type="text"
+                value={website}
+                onChange={e => setWebsite(e.target.value)}
+                placeholder="https://yoursite.com"
+                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
+            </div>
+          </SettingsSection>
+
           {/* ── Display ── */}
           <SettingsSection title="Display"
             description={`Preview: ${previewDate} at ${previewTime}`}>
@@ -658,22 +789,16 @@ All items you've rated, sorted highest to lowest.
                 </div>
               </PrefRow>
 
-              <PrefRow label="Reduce motion" desc="Minimise animations across the site">
-                <Toggle checked={reducedMotion} onChange={setReducedMotionPref} />
-              </PrefRow>
-
               <PrefRow label="Spoiler mode" desc="Blur episode names and overviews until hovered">
                 <Toggle checked={spoilerMode} onChange={setSpoilerModePref} />
               </PrefRow>
 
-              <PrefRow label="Auto-mark show as watched" desc="When all episodes are done, automatically mark the show itself as watched">
-                <Toggle checked={autoMarkShow} onChange={v => setPref('traktor_automark', v, setAutoMarkShow)} />
+              <PrefRow label="Auto-mark show as watched" desc="When all episodes are done, automatically mark the show itself as watched (always enabled)">
+                <span style={{ color: 'var(--text3)', fontSize: 12 }}>Always on</span>
               </PrefRow>
 
             </div>
           </SettingsSection>
-
-          {/* ── Privacy ── */}
           <SettingsSection title="Privacy" description="Control who can see your profile. Changes save automatically.">
             <div className="pref-grid">
               <PrefRow label="Private profile" desc="Only you can see your profile page">

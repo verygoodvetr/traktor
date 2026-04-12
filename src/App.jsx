@@ -218,8 +218,24 @@ function App() {
 
   async function login(provider) {
     setShowProviders(false)
-    try { await signInWithPopup(auth, provider) }
-    catch (err) { console.error(err) }
+    try {
+      await signInWithPopup(auth, provider)
+    } catch (err) {
+      console.error(err)
+      // Handle specific Firebase Auth errors
+      const errorMessages = {
+        'auth/user-disabled': 'This account has been disabled. If you believe this is a mistake, please email traktorapp@gmail.com',
+        'auth/operation-not-allowed': 'Sign-up is currently disabled. Please try again later.',
+        'auth/invalid-email': 'Invalid email address.',
+        'auth/wrong-password': 'Incorrect password.',
+        'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
+        'auth/account-exists-with-different-credential': 'An account already exists with a different sign-in method. Try signing in with the original method.',
+        'auth/popup-closed-by-user': 'Sign-in was cancelled.',
+        'auth/network-request-failed': 'Network error. Please check your connection.',
+      }
+      const message = errorMessages[err.code] || 'Sign-in failed. Please try again.'
+      alert(message) // Using alert for now - could be replaced with a toast component
+    }
   }
 
   function logout() {

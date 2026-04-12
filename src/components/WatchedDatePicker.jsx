@@ -1,8 +1,13 @@
 import { useState } from 'react'
 
 function WatchedDatePicker({ onSelect, onCancel }) {
-  const [customDate, setCustomDate] = useState('')
-  const [customTime, setCustomTime] = useState('')
+  // Auto-fill with current date/time
+  const now = new Date()
+  const defaultDate = now.toISOString().slice(0, 10)
+  const defaultTime = now.toTimeString().slice(0, 8)
+
+  const [customDate, setCustomDate] = useState(defaultDate)
+  const [customTime, setCustomTime] = useState(defaultTime)
 
   return (
     <div className="date-picker-box">
@@ -26,6 +31,7 @@ function WatchedDatePicker({ onSelect, onCancel }) {
         <input
           type="time"
           value={customTime}
+          step="1"
           onChange={e => setCustomTime(e.target.value)}
         />
       </div>
@@ -34,7 +40,7 @@ function WatchedDatePicker({ onSelect, onCancel }) {
           className="action-btn"
           disabled={!customDate}
           onClick={() => {
-            const dt = customDate + (customTime ? `T${customTime}:00` : 'T00:00:00')
+            const dt = customDate + (customTime ? `T${customTime}` : 'T00:00:00')
             onSelect(new Date(dt).toISOString())
           }}
         >

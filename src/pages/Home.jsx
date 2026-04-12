@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getTrending, getDetails, getStartWatchingMeta,
@@ -8,6 +8,7 @@ import {
 import { getUserData, markEpisodeWatched, addToWatched, removeFromWatchlist, addToWatchlist } from '../firestore'
 import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
+import { getDisplayPrefs, formatDateWithPattern, formatTimeWithPrefs } from './Settings'
 
 const TMDB_KEY = import.meta.env.VITE_TMDB_KEY
 
@@ -24,21 +25,17 @@ export function broadcastRefresh() {
 }
 
 // ─────────────────────────────────────────────────────────
-// Date helpers
+// Date helpers - now respects user preferences
 // ─────────────────────────────────────────────────────────
-function formatWatchedLabel(date, use12h, useDMY) {
+function formatWatchedLabel(date, prefs) {
   const now  = new Date()
   const diff = Math.floor((now - date) / 86400000)
-  const time = use12h
-    ? date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-    : date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const time = formatTimeWithPrefs(date, prefs.use12h, prefs.showSeconds)
 
   if (diff === 0) return `Today ${time}`.trim()
   if (diff === 1) return `Yesterday ${time}`.trim()
 
-  const dateStr = useDMY
-    ? `${String(date.getDate()).padStart(2,'0')}.${String(date.getMonth()+1).padStart(2,'0')}.${date.getFullYear()}`
-    : date.toLocaleDateString('en-US', { day: 'numeric', month: 'numeric', year: 'numeric' })
+  const dateStr = formatDateWithPattern(date, prefs.dateFormat)
   return `${dateStr} ${time}`.trim()
 }
 
@@ -431,11 +428,12 @@ function StartWatchingRow({ items, user, onQuickWatch }) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Upcoming Schedule — no time, only date labels, show all day
+// Upcoming Schedule — now uses user's date format preference
 // ─────────────────────────────────────────────────────────
 function UpcomingRow({ user }) {
   const [items, setItems] = useState(null)
   const navigate = useNavigate()
+  const prefs = getDisplayPrefs()
 
   useEffect(() => {
     if (!user) { setItems([]); return }
@@ -490,7 +488,8 @@ function UpcomingRow({ user }) {
 
     const diff = Math.floor((new Date(airDateStr) - new Date(todayOnly)) / 86400000)
     if (diff <= 7) return `In ${diff} days`
-    return new Date(airDateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    // Use user's date format preference
+    return formatDateWithPattern(new Date(airDateStr), prefs.dateFormat)
   }
 
   if (items === null) return <ScheduleSkeleton count={4} />
@@ -580,10 +579,11 @@ function RecommendedRow({ user, refreshKey }) {
 // ─────────────────────────────────────────────────────────
 // Recently Watched — movies show year, episodes show ep info
 // ─────────────────────────────────────────────────────────
-function HistoryRow({ user, refreshKey, use12hClock, useDMY }) {
+function HistoryRow({ user, refreshKey }) {
   const [items, setItems] = useState(null)
   const navigate = useNavigate()
   const CARD_W = 280
+  const prefs = getDisplayPrefs()
 
   const load = useCallback(async () => {
     if (!user) { setItems([]); return }
@@ -624,7 +624,7 @@ function HistoryRow({ user, refreshKey, use12hClock, useDMY }) {
   return (
     <ScrollRow cardWidth={CARD_W} gap={14}>
       {items.map((item, i) => {
-        const dateLabel = formatWatchedLabel(item.sortDate, use12hClock, useDMY)
+        const dateLabel = formatWatchedLabel(item.sortDate, prefs)
         const imgSrc = item.backdrop_path ? IMAGE_BASE + item.backdrop_path : null
         const subtitle = item.historyType === 'movie'
           ? (item.releaseYear || null)
@@ -743,9 +743,6 @@ function Home({ user, onSignIn, onStreakRefresh }) {
   const [isNewUser, setIsNewUser] = useState(false)
   const [checkedEmpty, setCheckedEmpty] = useState(false)
 
-  const use12hClock = (() => { try { return localStorage.getItem('traktor_12h') === 'true' } catch { return false } })()
-  const useDMY = (() => { try { return localStorage.getItem('traktor_dmy') !== 'false' } catch { return true } })()
-
   useEffect(() => {
     const unsub = subscribeToRefresh(() => {
       setRefreshKey(k => k + 1)
@@ -815,7 +812,7 @@ function Home({ user, onSignIn, onStreakRefresh }) {
           </LazySection>
 
           <LazySection title="Recently Watched" placeholder={<TraktSkeleton count={4} cardWidth={280} />}>
-            <HistoryRow user={user} refreshKey={refreshKey} use12hClock={use12hClock} useDMY={useDMY} />
+            <HistoryRow user={user} refreshKey={refreshKey} />
           </LazySection>
 
         </div>

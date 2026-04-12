@@ -4,14 +4,16 @@ import {
   getTrending, getPopularMovies, getPopularShows, getUpcomingMovies,
   IMAGE_BASE, IMAGE_BASE_LARGE,
 } from '../tmdb'
-import { addToWatched, getUserData } from '../firestore'
+import { addToWatched, getUserData, addToWatchlist, removeFromWatchlist } from '../firestore'
 import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
 
 const TMDB_KEY = import.meta.env.VITE_TMDB_KEY
 
 // ─── Badge logic (same as Netflix-style) ───────────────
-function getDiscBadge(item) {
+function getDiscBadge(item, hideBadge = false) {
+  if (hideBadge) return null // Allow hiding badges (e.g., Coming Soon section)
+
   const type = item.media_type || (item.first_air_date ? 'tv' : 'movie')
   const dateStr = type === 'movie' ? item.release_date : item.first_air_date
   if (!dateStr) return null
@@ -34,12 +36,13 @@ function getDiscBadge(item) {
 }
 
 // ─── Discovery card — matches Start Watching style exactly ─
-function DiscCard({ item, user, watchedSet, onWatched }) {
+function DiscCard({ item, user, watchedSet, watchlistSet, onWatched, onAddedToWatchlist, hideBadge }) {
   const navigate = useNavigate()
   const type = item.media_type || (item.first_air_date ? 'tv' : 'movie')
   const key = `${type}-${item.id}`
   const isWatched = watchedSet?.has(key)
-  const badge = getDiscBadge(item)
+  const isInWatchlist = watchlistSet?.has(key)
+  const badge = getDiscBadge(item, hideBadge)
 
   // TMDB rating pill (bottom-left, like Start Watching meta)
   const rating = item.vote_average > 0 ? `★ ${item.vote_average.toFixed(1)}` : null
@@ -47,12 +50,19 @@ function DiscCard({ item, user, watchedSet, onWatched }) {
   // Subtitle: year
   const year = (item.release_date || item.first_air_date || '').slice(0, 4)
 
-  async function quickWatch(e) {
+  async function quickAdd(e) {
     e.stopPropagation()
-    if (!user || isWatched) return
-    await addToWatched(user, { ...item, media_type: type }, 'now')
-    onWatched(key)
-    showToast(`${item.title || item.name} marked as watched!`)
+    if (!user) return
+    if (isInWatchlist) {
+      // Already in watchlist, remove it
+      await removeFromWatchlist(user, { ...item, media_type: type })
+      showToast(`${item.title || item.name} removed from watchlist`)
+    } else {
+      // Add to watchlist
+      await addToWatchlist(user, { ...item, media_type: type })
+      showToast(`${item.title || item.name} added to watchlist!`)
+    }
+    onAddedToWatchlist(key, !isInWatchlist)
   }
 
   return (
@@ -87,11 +97,11 @@ function DiscCard({ item, user, watchedSet, onWatched }) {
         {user && (
           <button
             className="trakt-qw-btn"
-            style={{ flexShrink: 0, background: isWatched ? 'var(--red)' : undefined }}
-            onClick={quickWatch}
-            title={isWatched ? 'Already watched' : 'Mark as watched'}
+            style={{ flexShrink: 0, background: isInWatchlist ? 'var(--green)' : undefined }}
+            onClick={quickAdd}
+            title={isInWatchlist ? 'In watchlist (click to remove)' : 'Add to watchlist'}
           >
-            {isWatched ? '✓' : '+'}
+            {isInWatchlist ? '✓' : '+'}
           </button>
         )}
       </div>
@@ -100,7 +110,7 @@ function DiscCard({ item, user, watchedSet, onWatched }) {
 }
 
 // ─── Scroll row with proper arrow management ────────────
-function DiscRow({ title, items, loading, user, watchedSet, onWatched }) {
+function DiscRow({ title, items, loading, user, watchedSet, watchlistSet, onWatched, onAddedToWatchlist, hideBadge }) {
   const scrollRef = useRef(null)
   const [canLeft,  setCanLeft]  = useState(false)
   const [canRight, setCanRight] = useState(true)
@@ -150,7 +160,8 @@ function DiscRow({ title, items, loading, user, watchedSet, onWatched }) {
             : items.map(item => (
                 <DiscCard
                   key={`${item.media_type || 'movie'}-${item.id}`}
-                  item={item} user={user} watchedSet={watchedSet} onWatched={onWatched}
+                  item={item} user={user} watchedSet={watchedSet} watchlistSet={watchlistSet}
+                  onWatched={onWatched} onAddedToWatchlist={onAddedToWatchlist} hideBadge={hideBadge}
                 />
               ))
           }
@@ -170,6 +181,7 @@ function Discovery({ user }) {
   const [topRated,      setTopRated]      = useState([])
   const [topRatedShows, setTopRatedShows] = useState([])
   const [watchedSet,    setWatchedSet]    = useState(new Set())
+  const [watchlistSet,  setWatchlistSet]  = useState(new Set())
   const [loading,       setLoading]       = useState(true)
 
   useEffect(() => {
@@ -195,23 +207,38 @@ function Discovery({ user }) {
 
   useEffect(() => {
     if (!user) return
-    getUserData(user).then(data => setWatchedSet(new Set(Object.keys(data.watched || {}))))
+    getUserData(user).then(data => {
+      setWatchedSet(new Set(Object.keys(data.watched || {})))
+      setWatchlistSet(new Set(Object.keys(data.watchlist || {})))
+    })
   }, [user])
 
   function onWatched(key) {
     setWatchedSet(prev => new Set([...prev, key]))
   }
 
+  function onAddedToWatchlist(key, added) {
+    setWatchlistSet(prev => {
+      const newSet = new Set(prev)
+      if (added) {
+        newSet.add(key)
+      } else {
+        newSet.delete(key)
+      }
+      return newSet
+    })
+  }
+
   return (
     <PageWrapper>
       <div className="discovery-page">
         <h1>Discovery</h1>
-        <DiscRow title="Trending This Week" items={trending}      loading={loading} user={user} watchedSet={watchedSet} onWatched={onWatched} />
-        <DiscRow title="Popular Movies"     items={popularMovies} loading={loading} user={user} watchedSet={watchedSet} onWatched={onWatched} />
-        <DiscRow title="Popular TV Shows"   items={popularShows}  loading={loading} user={user} watchedSet={watchedSet} onWatched={onWatched} />
-        <DiscRow title="Coming Soon"        items={upcoming}      loading={loading} user={user} watchedSet={watchedSet} onWatched={onWatched} />
-        <DiscRow title="Top Rated Movies"   items={topRated}      loading={loading} user={user} watchedSet={watchedSet} onWatched={onWatched} />
-        <DiscRow title="Top Rated TV Shows" items={topRatedShows} loading={loading} user={user} watchedSet={watchedSet} onWatched={onWatched} />
+        <DiscRow title="Trending This Week" items={trending}      loading={loading} user={user} watchedSet={watchedSet} watchlistSet={watchlistSet} onWatched={onWatched} onAddedToWatchlist={onAddedToWatchlist} hideBadge={false} />
+        <DiscRow title="Popular Movies"     items={popularMovies} loading={loading} user={user} watchedSet={watchedSet} watchlistSet={watchlistSet} onWatched={onWatched} onAddedToWatchlist={onAddedToWatchlist} hideBadge={false} />
+        <DiscRow title="Popular TV Shows"   items={popularShows}  loading={loading} user={user} watchedSet={watchedSet} watchlistSet={watchlistSet} onWatched={onWatched} onAddedToWatchlist={onAddedToWatchlist} hideBadge={false} />
+        <DiscRow title="Coming Soon"        items={upcoming}      loading={loading} user={user} watchedSet={watchedSet} watchlistSet={watchlistSet} onWatched={onWatched} onAddedToWatchlist={onAddedToWatchlist} hideBadge={true} />
+        <DiscRow title="Top Rated Movies"   items={topRated}      loading={loading} user={user} watchedSet={watchedSet} watchlistSet={watchlistSet} onWatched={onWatched} onAddedToWatchlist={onAddedToWatchlist} hideBadge={false} />
+        <DiscRow title="Top Rated TV Shows" items={topRatedShows} loading={loading} user={user} watchedSet={watchedSet} watchlistSet={watchlistSet} onWatched={onWatched} onAddedToWatchlist={onAddedToWatchlist} hideBadge={false} />
       </div>
     </PageWrapper>
   )

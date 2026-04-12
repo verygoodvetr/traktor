@@ -4,6 +4,7 @@ import { getDetails, IMAGE_BASE } from '../tmdb'
 import { useNavigate } from 'react-router-dom'
 import PageWrapper from '../components/PageWrapper'
 import { CardSkeleton } from '../components/Skeleton'
+import { DEFAULT_AVATAR, getDisplayPrefs } from './Settings'
 
 function Profile({ user }) {
   const [watchedMovies, setWatchedMovies] = useState([])
@@ -13,10 +14,15 @@ function Profile({ user }) {
   const [inProgress, setInProgress] = useState([])
   const [tab, setTab] = useState('movies')
   const [loading, setLoading] = useState(true)
+  const [userPhoto, setUserPhoto] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
     getUserData(user).then(async data => {
+      // Get custom profile photo from Firestore or fall back to Firebase user photo
+      const customPhoto = data.profile?.customPhotoURL || data.profile?.photoURL
+      setUserPhoto(customPhoto || user.photoURL || DEFAULT_AVATAR)
+
       const allWatched = Object.values(data.watched).sort((a, b) =>
         new Date(b.watchedAt) - new Date(a.watchedAt)
       )
@@ -107,7 +113,7 @@ function Profile({ user }) {
       <div style={{ padding: '32px' }}>
         <div>
           <div className="profile-header">
-            <img className="profile-avatar" src={user.photoURL || DEFAULT_AVATAR} alt={user.displayName}
+            <img className="profile-avatar" src={userPhoto || DEFAULT_AVATAR} alt={user.displayName}
               onError={e => { e.target.src = DEFAULT_AVATAR }} />
             <div>
               <h1>{user.displayName}</h1>
