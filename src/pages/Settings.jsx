@@ -12,26 +12,53 @@ import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
 
 // ─────────────────────────────────────────────────────────
-// Social media presets for public profile
+// Social media presets with SVG icons for public profile
 // ─────────────────────────────────────────────────────────
 const SOCIAL_PRESETS = [
-  { key: 'instagram', label: 'Instagram', placeholder: 'username', icon: '📷' },
-  { key: 'twitter', label: 'X / Twitter', placeholder: 'username', icon: '𝕏' },
-  { key: 'youtube', label: 'YouTube', placeholder: 'channel ID or @username', icon: '▶️' },
-  { key: 'facebook', label: 'Facebook', placeholder: 'profile or page URL', icon: 'f' },
+  {
+    key: 'instagram',
+    label: 'Instagram',
+    placeholder: 'username',
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>`,
+    color: '#E4405F'
+  },
+  {
+    key: 'twitter',
+    label: 'X / Twitter',
+    placeholder: 'username',
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`,
+    color: '#000000'
+  },
+  {
+    key: 'youtube',
+    label: 'YouTube',
+    placeholder: 'channel ID or @username',
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`,
+    color: '#FF0000'
+  },
+  {
+    key: 'facebook',
+    label: 'Facebook',
+    placeholder: 'profile or page URL',
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`,
+    color: '#1877F2'
+  },
 ]
 
-const PROFILE_BACKGROUNDS = [
-  { id: 'default', label: 'Default', gradient: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)' },
-  { id: 'cosmic', label: 'Cosmic', gradient: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)' },
-  { id: 'sunset', label: 'Sunset', gradient: 'linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)' },
-  { id: 'ocean', label: 'Ocean', gradient: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)' },
-  { id: 'forest', label: 'Forest', gradient: 'linear-gradient(135deg, #134e5e 0%, #71b280 100%)' },
-  { id: 'purple', label: 'Purple', gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
-  { id: 'fire', label: 'Fire', gradient: 'linear-gradient(135deg, #f12711 0%, #f5af19 100%)' },
-  { id: 'mint', label: 'Mint', gradient: 'linear-gradient(135deg, #43cea2 0%, #185a9d 100%)' },
-  { id: 'midnight', label: 'Midnight', gradient: 'linear-gradient(135deg, #232526 0%, #414345 100%)' },
-  { id: 'candy', label: 'Candy', gradient: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)' },
+// ─────────────────────────────────────────────────────────
+// Popular movie/show backdrop presets for public profile backgrounds
+// ─────────────────────────────────────────────────────────
+const MOVIE_BACKGROUNDS = [
+  { id: 'default', label: 'Default', image: null, gradient: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)' },
+  { id: 'interstellar', label: 'Interstellar', image: 'https://image.tmdb.org/t/p/original/rAiYTfKGqDCRIIqo664sY9XZIvQ.jpg', gradient: null },
+  { id: 'dark-knight', label: 'The Dark Knight', image: 'https://image.tmdb.org/t/p/original/9i7u687c2KJeZNbVJ7b1C8QXqO.jpg', gradient: null },
+  { id: 'inception', label: 'Inception', image: 'https://image.tmdb.org/t/p/original/ljsIYj6xqxJYapiFPP3VVClkdDM.jpg', gradient: null },
+  { id: 'matrix', label: 'The Matrix', image: 'https://image.tmdb.org/t/p/original/fNNZmpFeVOsRnnP2F5XgvYvVcVY.jpg', gradient: null },
+  { id: 'breaking-bad', label: 'Breaking Bad', image: 'https://image.tmdb.org/t/p/original/tsRy63Mu5cu8etLw9Pk1D0VRXyq.jpg', gradient: null },
+  { id: 'stranger-things', label: 'Stranger Things', image: 'https://image.tmdb.org/t/p/original/49WJfeN0h1F3H3H5s8e9giVbmwq.jpg', gradient: null },
+  { id: 'game-of-thrones', label: 'Game of Thrones', image: 'https://image.tmdb.org/t/p/original/u3bZgnGQ9T01sWNhyveQz0wH0Hl.jpg', gradient: null },
+  { id: 'oppenheimer', label: 'Oppenheimer', image: 'https://image.tmdb.org/t/p/original/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg', gradient: null },
+  { id: 'dune', label: 'Dune', image: 'https://image.tmdb.org/t/p/original/dU4H5Y3Jx9F2C9YhUE0sURdJ3l.jpg', gradient: null },
 ]
 
 // ─────────────────────────────────────────────────────────
@@ -197,10 +224,10 @@ function PhotoPicker({ currentPhoto, onSave, uid, user }) {
     { id: 'default', src: DEFAULT_AVATAR },
   ]
 
-  // Get linked providers
+  // Get linked providers and their photos
   const linkedProviders = user?.providerData?.map(p => p.providerId) || []
-  const googlePhoto = linkedProviders.includes('google.com') ? user?.reloadUserInfo?.photoUrl : null
-  const microsoftPhoto = linkedProviders.includes('microsoft.com') ? user?.reloadUserInfo?.photoUrl : null
+  const googlePhoto = user?.providerData?.find(p => p.providerId === 'google.com')?.photoURL || null
+  const microsoftPhoto = user?.providerData?.find(p => p.providerId === 'microsoft.com')?.photoURL || null
 
   async function save(photoURL) {
     setSaving(true)
@@ -705,12 +732,16 @@ All items you've rated, sorted highest to lowest.
             <div className="public-profile-field">
               <label className="settings-field-label">Profile background</label>
               <div className="background-picker">
-                {PROFILE_BACKGROUNDS.map(bg => (
+                {MOVIE_BACKGROUNDS.map(bg => (
                   <button key={bg.id}
                     className={`background-option${profileBackground === bg.id ? ' selected' : ''}`}
                     onClick={() => setProfileBackground(bg.id)}
                     title={bg.label}>
-                    <div style={{ background: bg.gradient, width: 40, height: 40, borderRadius: 4 }} />
+                    {bg.image ? (
+                      <img src={bg.image} alt={bg.label} style={{ width: 40, height: 40, borderRadius: 4, objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ background: bg.gradient, width: 40, height: 40, borderRadius: 4 }} />
+                    )}
                   </button>
                 ))}
               </div>
@@ -722,7 +753,7 @@ All items you've rated, sorted highest to lowest.
               <div className="social-links-grid">
                 {SOCIAL_PRESETS.map(s => (
                   <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 24, fontSize: 16 }}>{s.icon}</span>
+                    <span className="social-icon" style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.icon }} />
                     <input type="text"
                       value={socialLinks[s.key] || ''}
                       onChange={e => setSocialLinks(prev => ({ ...prev, [s.key]: e.target.value }))}

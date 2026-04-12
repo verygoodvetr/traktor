@@ -3951,3 +3951,204 @@ button.watchlist-blocked {
   object-fit: cover;
   background: var(--bg4);
 }
+
+/* ═══════════════════════════════════════════════
+   PUBLIC PROFILE — header with background
+   ═══════════════════════════════════════════════ */
+
+.pub-profile-header {
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.pub-profile-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 100%);
+}
+
+.pub-profile-header-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.pub-profile-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid rgba(255,255,255,0.3);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+.pub-profile-info h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  margin-bottom: 4px;
+}
+
+.pub-profile-username {
+  font-size: 14px;
+  color: rgba(255,255,255,0.8);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+
+.pub-profile-stats {
+  font-size: 14px;
+  color: rgba(255,255,255,0.7);
+  margin-top: 6px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+
+/* ═══════════════════════════════════════════════
+   PUBLIC PROFILE — contact/social links
+   ═══════════════════════════════════════════════ */
+
+.pub-profile-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pub-profile-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text2);
+  text-decoration: none;
+  padding: 6px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: all 0.15s;
+}
+
+.pub-profile-contact-item:hover {
+  border-color: var(--border2);
+  color: var(--text);
+}
+
+.pub-profile-contact-item svg {
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   SETTINGS — social icons
+   ═══════════════════════════════════════════════ */
+
+.social-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.social-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ═══════════════════════════════════════════════
+   SETTINGS — background picker
+   ═══════════════════════════════════════════════ */
+
+.background-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.background-option {
+  background: none;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  padding: 2px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+  overflow: hidden;
+}
+
+.background-option:hover {
+  border-color: var(--border2);
+  transform: scale(1.05);
+}
+
+.background-option.selected {
+  border-color: var(--red);
+}
+
+/* ═══════════════════════════════════════════════
+   SETTINGS — import from account buttons
+   ═══════════════════════════════════════════════ */
+
+.import-from-account {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.import-account-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.import-account-btn:hover {
+  background: var(--bg4);
+  border-color: var(--border3);
+}
+
+.import-account-btn span:first-child {
+  font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════
+   PUBLIC PROFILE LINK BOX
+   ═══════════════════════════════════════════════ */
+
+.public-profile-link-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.public-profile-field {
+  margin-bottom: 16px;
+}
+
+/* ═══════════════════════════════════════════════
+   SOCIAL LINKS GRID
+   ═══════════════════════════════════════════════ */
+
+.social-links-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
