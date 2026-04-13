@@ -9,13 +9,13 @@ const _cache = new Map()
 
 function cacheKey(uid, sub) { return `${uid}:${sub}` }
 
-function invalidateUserCache(uid) {
+export function invalidateUserCache(uid) {
   for (const key of _cache.keys()) {
     if (key.startsWith(`${uid}:`)) _cache.delete(key)
   }
 }
 
-async function getCachedCollection(uid, sub) {
+export async function getCachedCollection(uid, sub) {
   const key = cacheKey(uid, sub)
   if (_cache.has(key)) return _cache.get(key)
   const snap = await getDocs(collection(db, 'users', uid, sub))
