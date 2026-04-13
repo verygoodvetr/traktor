@@ -592,6 +592,129 @@ function Settings({ user }) {
   }
 
   // ── Import from Trakt ─────────────────────────────────────
+  // File-based import (recommended - no OAuth needed)
+  async function handleTraktFileImport(file) {
+    if (!file) return
+    setImporting(true)
+    setImportProgress({ current: 0, total: 0, status: 'Reading file...' })
+    setImportedCount({ watched: 0, watchlist: 0 })
+
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+
+      // Parse Trakt export format
+      // Trakt exports: movies, shows arrays with watched/at fields
+      const watchedMovies = data.movies || []
+      const watchedShows = data.shows || []
+      const watchlist = data.watchlist || []
+
+      // Get existing items
+      const existingWatched = await getCachedCollection(user.uid, 'watched')
+      const existingWatchlist = await getCachedCollection(user.uid, 'watchlist')
+
+      // Collect items to add
+      const moviesToAdd = []
+      const showsToAdd = []
+      const watchlistMovies = []
+      const watchlistShows = []
+
+      // Process watched movies
+      for (const item of watchedMovies) {
+        const tmdbId = item.ids?.tmdb
+        if (tmdbId && !existingWatched.has(`movie-${tmdbId}`)) {
+          moviesToAdd.push({
+            id: tmdbId,
+            media_type: 'movie',
+            title: item.title,
+            poster_path: null,
+          })
+        }
+      }
+
+      // Process watched shows
+      for (const item of watchedShows) {
+        const tmdbId = item.ids?.tmdb
+        if (tmdbId && !existingWatched.has(`tv-${tmdbId}`)) {
+          showsToAdd.push({
+            id: tmdbId,
+            media_type: 'tv',
+            title: item.title,
+            poster_path: null,
+          })
+        }
+      }
+
+      // Process watchlist
+      for (const item of watchlist) {
+        const tmdbId = item.ids?.tmdb
+        if (!tmdbId) continue
+        if (item.type === 'movie' || item.media_type === 'movie') {
+          if (!existingWatchlist.has(`movie-${tmdbId}`)) {
+            watchlistMovies.push({
+              id: tmdbId,
+              media_type: 'movie',
+              title: item.title,
+              poster_path: null,
+            })
+          }
+        } else {
+          if (!existingWatchlist.has(`tv-${tmdbId}`)) {
+            watchlistShows.push({
+              id: tmdbId,
+              media_type: 'tv',
+              title: item.title,
+              poster_path: null,
+            })
+          }
+        }
+      }
+
+      const totalToImport = moviesToAdd.length + showsToAdd.length + watchlistMovies.length + watchlistShows.length
+      setImportProgress({ current: 0, total: totalToImport, status: `Found ${totalToImport} items to import` })
+
+      if (totalToImport === 0) {
+        showToast('Your watch history is already up to date!')
+        setImporting(false)
+        return
+      }
+
+      // Import all items
+      let imported = 0
+      const BATCH_SIZE = 100
+      const importItem = async (items, collection, isWatchlist) => {
+        for (let i = 0; i < items.length; i += BATCH_SIZE) {
+          const batch = writeBatch(db)
+          items.slice(i, i + BATCH_SIZE).forEach(item => {
+            const data = isWatchlist ? { ...item, addedAt: new Date().toISOString() } : item
+            batch.set(doc(db, 'users', user.uid, collection, `${item.media_type}-${item.id}`), data)
+          })
+          await batch.commit()
+          imported += Math.min(BATCH_SIZE, items.length - i)
+          setImportProgress({ current: imported, total: totalToImport, status: `Importing... ${imported}/${totalToImport}` })
+        }
+      }
+
+      await importItem(moviesToAdd, 'watched', false)
+      await importItem(showsToAdd, 'watched', false)
+      await importItem(watchlistMovies, 'watchlist', true)
+      await importItem(watchlistShows, 'watchlist', true)
+
+      setImportProgress({ current: totalToImport, total: totalToImport, status: 'Done!' })
+      setImportedCount({
+        watched: moviesToAdd.length + showsToAdd.length,
+        watchlist: watchlistMovies.length + watchlistShows.length,
+      })
+      showToast(`Imported ${moviesToAdd.length + showsToAdd.length} watched and ${watchlistMovies.length + watchlistShows.length} watchlist items!`)
+      invalidateUserCache(user.uid)
+    } catch (err) {
+      console.error('Trakt import error:', err)
+      showToast('Import failed. Make sure you uploaded a valid Trakt JSON export.', 'error')
+    }
+    setImporting(false)
+  }
+
+  // Legacy: API-based import (requires OAuth - not working)
   async function handleTraktImport(username) {
     if (!username || !username.trim()) {
       showToast('Please enter your Trakt username.', 'error')
@@ -1203,36 +1326,23 @@ All items you've rated, sorted highest to lowest.
 
           {/* ── Import from Trakt ── */}
           <SettingsSection title="Import from Trakt"
-            description="Import your watch history and watchlist from Trakt.tv. Note: Trakt requires OAuth authentication for public data access.">
+            description="Import your watch history and watchlist from Trakt.tv using a data export file.">
             <div className="trakt-import-section">
               <p className="settings-desc" style={{ marginBottom: 12, color: 'var(--text2)', fontSize: 13 }}>
-                Trakt.tv requires OAuth authentication — the app needs to connect to your account directly.
-                This feature requires you to first register a Trakt API app and authorize access.
+                Export your data from Trakt.tv (Settings → Export Data → JSON), then upload it here to import your watch history and watchlist.
               </p>
-              <div className="trakt-import-form">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ opacity: 0.5, fontSize: 18 }}>@</span>
-                  <input
-                    type="text"
-                    id="trakt-username-input"
-                    placeholder="Your Trakt username"
-                    style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14 }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !importing) {
-                        handleTraktImport(document.getElementById('trakt-username-input').value)
-                      }
-                    }}
-                  />
-                </div>
-                <button
-                  className="action-btn primary-action"
-                  onClick={() => handleTraktImport(document.getElementById('trakt-username-input').value)}
-                  disabled={importing}
-                  style={{ marginTop: 12 }}
-                >
-                  {importing ? 'Importing...' : 'Import from Trakt'}
-                </button>
-              </div>
+              <label className="action-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                </svg>
+                Upload Trakt Export
+                <input
+                  type="file"
+                  accept=".json"
+                  style={{ display: 'none' }}
+                  onChange={e => handleTraktFileImport(e.target.files[0])}
+                />
+              </label>
 
               {/* Progress indicator */}
               {importing && importProgress.total > 0 && (
