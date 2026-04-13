@@ -612,8 +612,8 @@ function Settings({ user }) {
       if (!historyRes.ok) {
         const errMsg = historyRes.status === 404
           ? 'Username not found on Trakt.'
-          : historyRes.status === 401
-            ? 'Trakt authorization failed.'
+          : historyRes.status === 401 || historyRes.status === 412
+            ? 'Trakt requires authentication. Please use a different import method.'
             : `Trakt error (${historyRes.status}).`
         showToast(errMsg, 'error')
         setImporting(false)
@@ -1203,10 +1203,11 @@ All items you've rated, sorted highest to lowest.
 
           {/* ── Import from Trakt ── */}
           <SettingsSection title="Import from Trakt"
-            description="Import your watch history and watchlist from your Trakt.tv account. Enter your Trakt username to get started.">
+            description="Import your watch history and watchlist from Trakt.tv. Note: Trakt requires OAuth authentication for public data access.">
             <div className="trakt-import-section">
-              <p className="settings-desc" style={{ marginBottom: 12 }}>
-                This will import your watch history and watchlist from Trakt.tv. Items already in your library will be skipped.
+              <p className="settings-desc" style={{ marginBottom: 12, color: 'var(--text2)', fontSize: 13 }}>
+                Trakt.tv requires OAuth authentication — the app needs to connect to your account directly.
+                This feature requires you to first register a Trakt API app and authorize access.
               </p>
               <div className="trakt-import-form">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
