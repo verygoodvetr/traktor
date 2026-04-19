@@ -592,7 +592,7 @@ function Settings({ user }) {
   }
 
   // ── Import from Trakt ─────────────────────────────────────
-  // File-based import (supports ZIP and JSON)
+  // File-based import (ZIP only - Trakt default export format)
   async function handleTraktFileImport(file) {
     if (!file) return
     setImporting(true)
@@ -600,44 +600,42 @@ function Settings({ user }) {
     setImportedCount({ watched: 0, watchlist: 0 })
 
     try {
-      let watchedMovies = [], watchedShows = [], watchlist = []
+      // Only handle ZIP files
+      if (!file.name.endsWith('.zip')) {
+        showToast('Please upload a ZIP file exported from Trakt.tv', 'error')
+        setImporting(false)
+        return
+      }
 
-      // Handle ZIP files (Trakt default export format)
-      if (file.name.endsWith('.zip')) {
-        setImportProgress(p => ({ ...p, status: 'Extracting ZIP...' }))
-        const JSZip = (await import('jszip')).default
-        const zip = await JSZip.loadAsync(file)
+      setImportProgress(p => ({ ...p, status: 'Extracting ZIP...' }))
+      const JSZip = (await import('jszip')).default
+      const zip = await JSZip.loadAsync(file)
 
-        // Trakt ZIP structure: watched-movies.json, watched-shows.json, lists-watchlist.json
-        for (const [filename, zipEntry] of Object.entries(zip.files)) {
-          if (zipEntry.dir) continue
-          const lower = filename.toLowerCase()
+      // Load all data files
+      let watchedMovies = [], watchedShows = [], watchlist = [], episodeHistory = []
 
-          if (filename === 'watched-movies.json') {
-            watchedMovies = JSON.parse(await zipEntry.async('string'))
-          } else if (filename === 'watched-shows.json') {
-            watchedShows = JSON.parse(await zipEntry.async('string'))
-          } else if (filename === 'lists-watchlist.json') {
-            watchlist = JSON.parse(await zipEntry.async('string'))
-          }
+      for (const [filename, zipEntry] of Object.entries(zip.files)) {
+        if (zipEntry.dir) continue
+
+        if (filename === 'watched-movies.json') {
+          watchedMovies = JSON.parse(await zipEntry.async('string'))
+        } else if (filename === 'watched-shows.json') {
+          watchedShows = JSON.parse(await zipEntry.async('string'))
+        } else if (filename === 'lists-watchlist.json') {
+          watchlist = JSON.parse(await zipEntry.async('string'))
+        } else if (filename === 'watched-history-1.json' || filename === 'watched-history-2.json') {
+          const history = JSON.parse(await zipEntry.async('string'))
+          episodeHistory.push(...history)
         }
-      } else {
-        // Plain JSON file
-        const text = await file.text()
-        const data = JSON.parse(text)
-        watchedMovies = data.movies || []
-        watchedShows = data.shows || []
-        watchlist = data.watchlist || []
       }
 
       // Get existing items
       const existingWatched = await getCachedCollection(user.uid, 'watched')
       const existingWatchlist = await getCachedCollection(user.uid, 'watchlist')
+      const existingEpisodes = await getCachedCollection(user.uid, 'episodes')
 
-      // Collect items to add
-      const moviesToAdd = [], showsToAdd = [], watchlistMovies = [], watchlistShows = []
-
-      // Process watched movies - format: { movie: { ids: { tmdb: 123 }, title: "..." } }
+      // Process watched movies
+      const moviesToAdd = []
       for (const item of watchedMovies) {
         const movie = item.movie || item
         const tmdbId = movie.ids?.tmdb || movie.tmdb
@@ -646,16 +644,51 @@ function Settings({ user }) {
         }
       }
 
-      // Process watched shows - format: { show: { ids: { tmdb: 123 }, title: "..." } }
-      for (const item of watchedShows) {
-        const show = item.show || item
-        const tmdbId = show.ids?.tmdb || show.tmdb
-        if (tmdbId && !existingWatched[`tv-${tmdbId}`]) {
-          showsToAdd.push({ id: tmdbId, media_type: 'tv', title: show.title, poster_path: null })
+      // Process episode history - group by show
+      // Format: { show: { ids: { tmdb: 123 } }, episode: { season: 3, number: 6, ids: { tmdb: 6940027 } } }
+      const showEpisodes = {} // showTmdbId -> Map("sX_eY" -> episodeData)
+
+      for (const item of episodeHistory) {
+        if (item.type !== 'episode') continue
+        const show = item.show || {}
+        const episode = item.episode || {}
+        const showTmdbId = show.ids?.tmdb
+        if (!showTmdbId || !episode.season || !episode.number) continue
+
+        const epKey = `tv-${showTmdbId}-s${episode.season}e${episode.number}`
+        if (!existingEpisodes[epKey]) {
+          if (!showEpisodes[showTmdbId]) showEpisodes[showTmdbId] = new Map()
+          showEpisodes[showTmdbId].set(`${episode.season}-${episode.number}`, {
+            showId: showTmdbId,
+            seasonNum: episode.season,
+            episodeNum: episode.number,
+            watchedAt: item.watched_at || null,
+            watchedAtUnknown: !item.watched_at,
+          })
         }
       }
 
-      // Process watchlist - format: { type: "movies"/"shows", movie/show: { ids: { tmdb: 123 } } }
+      // Mark shows as watched only if they have episodes tracked
+      const showsToAdd = []
+      const episodesToAdd = []
+      for (const [showTmdbId, episodes] of Object.entries(showEpisodes)) {
+        if (!existingWatched[`tv-${showTmdbId}`]) {
+          // Find show title from watched-shows or episode history
+          const showData = watchedShows.find(s => (s.show?.ids?.tmdb || s.ids?.tmdb) == showTmdbId)
+          const showTitle = showData?.show?.title || showData?.title || 'Unknown Show'
+          showsToAdd.push({ id: parseInt(showTmdbId), media_type: 'tv', title: showTitle, poster_path: null })
+        }
+        // Add all episodes for this show
+        for (const ep of episodes.values()) {
+          const epKey = `tv-${showTmdbId}-s${ep.seasonNum}e${ep.episodeNum}`
+          if (!existingEpisodes[epKey]) {
+            episodesToAdd.push(ep)
+          }
+        }
+      }
+
+      // Process watchlist
+      const watchlistMovies = [], watchlistShows = []
       for (const item of watchlist) {
         const type = item.type || (item.movie ? 'movies' : 'shows')
         const media = item.movie || item.show || item
@@ -673,8 +706,8 @@ function Settings({ user }) {
         }
       }
 
-      const totalToImport = moviesToAdd.length + showsToAdd.length + watchlistMovies.length + watchlistShows.length
-      setImportProgress({ current: 0, total: totalToImport, status: `Found ${totalToImport} items to import` })
+      const totalToImport = moviesToAdd.length + showsToAdd.length + episodesToAdd.length + watchlistMovies.length + watchlistShows.length
+      setImportProgress({ current: 0, total: totalToImport, status: `Found ${totalToImport} items` })
 
       if (totalToImport === 0) {
         showToast('Your watch history is already up to date!')
@@ -685,12 +718,18 @@ function Settings({ user }) {
       // Import all items
       let imported = 0
       const BATCH_SIZE = 100
-      const importBatch = async (items, collection, isWatchlist) => {
+      const importBatch = async (items, collection) => {
         for (let i = 0; i < items.length; i += BATCH_SIZE) {
           const batch = writeBatch(db)
           items.slice(i, i + BATCH_SIZE).forEach(item => {
-            const itemData = isWatchlist ? { ...item, addedAt: new Date().toISOString() } : item
-            batch.set(doc(db, 'users', user.uid, collection, `${item.media_type}-${item.id}`), itemData)
+            const isEpisode = collection === 'episodes'
+            const itemData = isEpisode ? item : (collection === 'watchlist'
+              ? { ...item, addedAt: new Date().toISOString() }
+              : item)
+            const docId = isEpisode
+              ? `tv-${item.showId}-s${item.seasonNum}e${item.episodeNum}`
+              : `${item.media_type}-${item.id}`
+            batch.set(doc(db, 'users', user.uid, collection, docId), itemData)
           })
           await batch.commit()
           imported += Math.min(BATCH_SIZE, items.length - i)
@@ -698,17 +737,18 @@ function Settings({ user }) {
         }
       }
 
-      await importBatch(moviesToAdd, 'watched', false)
-      await importBatch(showsToAdd, 'watched', false)
-      await importBatch(watchlistMovies, 'watchlist', true)
-      await importBatch(watchlistShows, 'watchlist', true)
+      await importBatch(moviesToAdd, 'watched')
+      await importBatch(showsToAdd, 'watched')
+      await importBatch(episodesToAdd, 'episodes')
+      await importBatch(watchlistMovies, 'watchlist')
+      await importBatch(watchlistShows, 'watchlist')
 
       setImportProgress({ current: totalToImport, total: totalToImport, status: 'Done!' })
       setImportedCount({
         watched: moviesToAdd.length + showsToAdd.length,
         watchlist: watchlistMovies.length + watchlistShows.length,
       })
-      showToast(`Imported ${moviesToAdd.length + showsToAdd.length} watched and ${watchlistMovies.length + watchlistShows.length} watchlist items!`)
+      showToast(`Imported ${moviesToAdd.length} movies, ${showsToAdd.length} shows (${episodesToAdd.length} episodes), ${watchlistMovies.length + watchlistShows.length} watchlist items`)
       invalidateUserCache(user.uid)
     } catch (err) {
       console.error('Trakt import error:', err)
@@ -1329,19 +1369,19 @@ All items you've rated, sorted highest to lowest.
 
           {/* ── Import from Trakt ── */}
           <SettingsSection title="Import from Trakt"
-            description="Import your watch history and watchlist from Trakt.tv using a data export file.">
+            description="Import your watch history, episodes, and watchlist from Trakt.tv using a ZIP export file.">
             <div className="trakt-import-section">
               <p className="settings-desc" style={{ marginBottom: 12, color: 'var(--text2)', fontSize: 13 }}>
-                Export your data from Trakt.tv (Settings → Export Data → JSON), then upload it here to import your watch history and watchlist.
+                Export your data from Trakt.tv (Settings → Export Data → JSON), which downloads as a ZIP file. Upload it here to import your movies, shows, episodes, and watchlist.
               </p>
               <label className="action-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
                 </svg>
-                Upload Trakt Export
+                Upload Trakt ZIP
                 <input
                   type="file"
-                  accept=".zip,.json"
+                  accept=".zip"
                   style={{ display: 'none' }}
                   onChange={e => handleTraktFileImport(e.target.files[0])}
                 />
