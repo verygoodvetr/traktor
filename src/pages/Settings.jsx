@@ -641,7 +641,7 @@ function Settings({ user }) {
       for (const item of watchedMovies) {
         const movie = item.movie || item
         const tmdbId = movie.ids?.tmdb || movie.tmdb
-        if (tmdbId && !existingWatched.has(`movie-${tmdbId}`)) {
+        if (tmdbId && !existingWatched[`movie-${tmdbId}`]) {
           moviesToAdd.push({ id: tmdbId, media_type: 'movie', title: movie.title, poster_path: null })
         }
       }
@@ -650,7 +650,7 @@ function Settings({ user }) {
       for (const item of watchedShows) {
         const show = item.show || item
         const tmdbId = show.ids?.tmdb || show.tmdb
-        if (tmdbId && !existingWatched.has(`tv-${tmdbId}`)) {
+        if (tmdbId && !existingWatched[`tv-${tmdbId}`]) {
           showsToAdd.push({ id: tmdbId, media_type: 'tv', title: show.title, poster_path: null })
         }
       }
@@ -663,11 +663,11 @@ function Settings({ user }) {
         if (!tmdbId) continue
 
         if (type === 'movies' || item.movie) {
-          if (!existingWatchlist.has(`movie-${tmdbId}`)) {
+          if (!existingWatchlist[`movie-${tmdbId}`]) {
             watchlistMovies.push({ id: tmdbId, media_type: 'movie', title: media.title, poster_path: null })
           }
         } else {
-          if (!existingWatchlist.has(`tv-${tmdbId}`)) {
+          if (!existingWatchlist[`tv-${tmdbId}`]) {
             watchlistShows.push({ id: tmdbId, media_type: 'tv', title: media.title, poster_path: null })
           }
         }
