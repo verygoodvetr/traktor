@@ -608,16 +608,16 @@ function Settings({ user }) {
         const JSZip = (await import('jszip')).default
         const zip = await JSZip.loadAsync(file)
 
-        // Trakt ZIP structure: movies_watched.json, shows_watched.json, watchlist.json
+        // Trakt ZIP structure: watched-movies.json, watched-shows.json, lists-watchlist.json
         for (const [filename, zipEntry] of Object.entries(zip.files)) {
           if (zipEntry.dir) continue
           const lower = filename.toLowerCase()
 
-          if (lower.includes('movies') && lower.includes('watched') && filename.endsWith('.json')) {
+          if (filename === 'watched-movies.json') {
             watchedMovies = JSON.parse(await zipEntry.async('string'))
-          } else if (lower.includes('shows') && lower.includes('watched') && filename.endsWith('.json')) {
+          } else if (filename === 'watched-shows.json') {
             watchedShows = JSON.parse(await zipEntry.async('string'))
-          } else if (lower.includes('watchlist') && filename.endsWith('.json')) {
+          } else if (filename === 'lists-watchlist.json') {
             watchlist = JSON.parse(await zipEntry.async('string'))
           }
         }
@@ -637,34 +637,38 @@ function Settings({ user }) {
       // Collect items to add
       const moviesToAdd = [], showsToAdd = [], watchlistMovies = [], watchlistShows = []
 
-      // Process watched movies
+      // Process watched movies - format: { movie: { ids: { tmdb: 123 }, title: "..." } }
       for (const item of watchedMovies) {
-        const tmdbId = item.ids?.tmdb || item.tmdb
+        const movie = item.movie || item
+        const tmdbId = movie.ids?.tmdb || movie.tmdb
         if (tmdbId && !existingWatched.has(`movie-${tmdbId}`)) {
-          moviesToAdd.push({ id: tmdbId, media_type: 'movie', title: item.title, poster_path: null })
+          moviesToAdd.push({ id: tmdbId, media_type: 'movie', title: movie.title, poster_path: null })
         }
       }
 
-      // Process watched shows
+      // Process watched shows - format: { show: { ids: { tmdb: 123 }, title: "..." } }
       for (const item of watchedShows) {
-        const tmdbId = item.ids?.tmdb || item.tmdb
+        const show = item.show || item
+        const tmdbId = show.ids?.tmdb || show.tmdb
         if (tmdbId && !existingWatched.has(`tv-${tmdbId}`)) {
-          showsToAdd.push({ id: tmdbId, media_type: 'tv', title: item.title, poster_path: null })
+          showsToAdd.push({ id: tmdbId, media_type: 'tv', title: show.title, poster_path: null })
         }
       }
 
-      // Process watchlist
+      // Process watchlist - format: { type: "movies"/"shows", movie/show: { ids: { tmdb: 123 } } }
       for (const item of watchlist) {
-        const tmdbId = item.ids?.tmdb || item.tmdb
+        const type = item.type || (item.movie ? 'movies' : 'shows')
+        const media = item.movie || item.show || item
+        const tmdbId = media?.ids?.tmdb || media?.tmdb
         if (!tmdbId) continue
-        const type = item.type || item.media_type || 'show'
-        if (type === 'movie' || item.media_type === 'movie') {
+
+        if (type === 'movies' || item.movie) {
           if (!existingWatchlist.has(`movie-${tmdbId}`)) {
-            watchlistMovies.push({ id: tmdbId, media_type: 'movie', title: item.title, poster_path: null })
+            watchlistMovies.push({ id: tmdbId, media_type: 'movie', title: media.title, poster_path: null })
           }
         } else {
           if (!existingWatchlist.has(`tv-${tmdbId}`)) {
-            watchlistShows.push({ id: tmdbId, media_type: 'tv', title: item.title, poster_path: null })
+            watchlistShows.push({ id: tmdbId, media_type: 'tv', title: media.title, poster_path: null })
           }
         }
       }
