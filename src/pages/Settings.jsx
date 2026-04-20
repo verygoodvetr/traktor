@@ -662,28 +662,37 @@ function Settings({ user }) {
             showId: showTmdbId,
             seasonNum: episode.season,
             episodeNum: episode.number,
-            watchedAt: item.watched_at || null,
+            // Use current date for imported episodes (needed for sorting in Continue Watching)
+            watchedAt: item.watched_at || new Date().toISOString(),
             watchedAtUnknown: !item.watched_at,
           })
         }
       }
 
-      // Mark shows as watched only if they have episodes tracked
-      const showsToAdd = []
+      // Don't mark shows as watched automatically - only add episodes
+      // Shows will be marked as watched when user completes all episodes
       const episodesToAdd = []
       for (const [showTmdbId, episodes] of Object.entries(showEpisodes)) {
-        if (!existingWatched[`tv-${showTmdbId}`]) {
-          // Find show title from watched-shows or episode history
-          const showData = watchedShows.find(s => (s.show?.ids?.tmdb || s.ids?.tmdb) == showTmdbId)
-          const showTitle = showData?.show?.title || showData?.title || 'Unknown Show'
-          showsToAdd.push({ id: parseInt(showTmdbId), media_type: 'tv', title: showTitle, poster_path: null })
-        }
         // Add all episodes for this show
         for (const ep of episodes.values()) {
           const epKey = `tv-${showTmdbId}-s${ep.seasonNum}e${ep.episodeNum}`
           if (!existingEpisodes[epKey]) {
             episodesToAdd.push(ep)
           }
+        }
+      }
+
+      // Also check watched-shows.json for shows with no episode data (fully watched)
+      const showsToAdd = []
+      for (const item of watchedShows) {
+        const show = item.show || item
+        const tmdbId = show.ids?.tmdb || show.tmdb
+        if (!tmdbId) continue
+        // Only add shows that have NO episode history (fully watched)
+        // Shows with episode history will be marked as watched when all episodes are done
+        const showKey = `tv-${tmdbId}`
+        if (!existingWatched[showKey] && !showEpisodes[tmdbId]) {
+          showsToAdd.push({ id: tmdbId, media_type: 'tv', title: show.title, poster_path: null })
         }
       }
 
