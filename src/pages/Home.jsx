@@ -353,6 +353,9 @@ function ContinueWatchingRow({ user, refreshKey }) {
       const showEps = Object.values(data.episodes).filter(e => e.showId === showId)
       const totalEps = details.seasons?.filter(s => s.season_number > 0).reduce((acc, s) => acc + s.episode_count, 0) || 0
 
+      // Skip shows that are "up to date" (all episodes watched)
+      if (availableToWatch === 0) continue
+
       result.push({
         showId, showTitle: details.name, backdrop_path: details.backdrop_path,
         nextEp: nextEpObj, nextEpRuntime: nextEpObj.runtime, nextEpStill: nextEpObj.still_path || null,
@@ -563,7 +566,7 @@ function UpcomingRow({ user }) {
             <p className="schedule-card-title">{item.title}</p>
             <p className="schedule-card-date">{formatLabel(item.airDateStr)}</p>
             <p className="schedule-card-sub">
-              {item.isMovie ? 'Movie release' : item.nextEp ? `S${item.nextEp.season_number} E${item.nextEp.episode_number}` : 'New episode'}
+              {item.isMovie ? 'Movie release' : item.nextEp ? `S${item.nextEp.season_number} E${item.nextEp.episode_number}${item.nextEp.name ? ` — ${item.nextEp.name}` : ''}` : 'New episode'}
             </p>
           </div>
         </div>
