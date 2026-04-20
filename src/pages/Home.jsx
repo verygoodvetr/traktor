@@ -291,41 +291,74 @@ function ContinueWatchingRow({ user, refreshKey }) {
     const showIds = new Set()
     Object.values(data.episodes || {}).forEach(ep => showIds.add(ep.showId))
 
-    const result = []
-    for (const showId of showIds) {
-      if (data.watched[`tv-${showId}`]) continue
-      try {
-        const details = await getDetails('tv', showId)
-        if (details.first_air_date && new Date(details.first_air_date) > new Date()) continue
+    if (showIds.size === 0) { setItems([]); return }
 
-        const airedEps = []
-        for (const season of (details.seasons || []).filter(s => s.season_number > 0)) {
-          const sd = await fetch(`https://api.themoviedb.org/3/tv/${showId}/season/${season.season_number}?api_key=${TMDB_KEY}`).then(r => r.json())
+    // Fetch all show details in parallel (batch by 10)
+    const showIdArray = Array.from(showIds)
+    const showDetails = {}
+
+    // Fetch in batches to avoid rate limiting
+    const BATCH_SIZE = 10
+    for (let i = 0; i < showIdArray.length; i += BATCH_SIZE) {
+      const batch = showIdArray.slice(i, i + BATCH_SIZE)
+      const promises = batch.map(async (showId) => {
+        try {
+          const details = await getDetails('tv', showId)
+          return { showId, details }
+        } catch (e) { return null }
+      })
+      const results = await Promise.all(promises)
+      results.forEach(r => { if (r) showDetails[r.showId] = r.details })
+    }
+
+    const result = []
+    for (const showId of showIdArray) {
+      if (data.watched[`tv-${showId}`]) continue
+      const details = showDetails[showId]
+      if (!details) continue
+      if (details.first_air_date && new Date(details.first_air_date) > new Date()) continue
+
+      // Fetch all season data in parallel
+      const seasonPromises = (details.seasons || [])
+        .filter(s => s.season_number > 0)
+        .map(s =>
+          fetch(`https://api.themoviedb.org/3/tv/${showId}/season/${s.season_number}?api_key=${TMDB_KEY}`)
+            .then(r => r.json())
+            .catch(() => null)
+        )
+      const seasonDataResults = await Promise.all(seasonPromises)
+
+      const airedEps = []
+      seasonDataResults.forEach((sd, idx) => {
+        if (!sd) return
+        const seasonNum = (details.seasons || []).filter(s => s.season_number > 0)[idx]?.season_number
+        if (seasonNum) {
           for (const ep of (sd.episodes || [])) {
             if (ep.air_date && new Date(ep.air_date) > new Date()) continue
-            airedEps.push({ ...ep, seasonNum: season.season_number })
+            airedEps.push({ ...ep, seasonNum })
           }
         }
-        if (airedEps.length === 0) continue
+      })
 
-        let furthestIdx = -1
-        airedEps.forEach((ep, idx) => {
-          if (data.episodes[`tv-${showId}-s${ep.seasonNum}e${ep.episode_number}`]) furthestIdx = idx
-        })
-        if (furthestIdx === -1) continue
+      if (airedEps.length === 0) continue
 
-        const nextEpObj = furthestIdx >= airedEps.length - 1 ? airedEps[0] : airedEps[furthestIdx + 1]
-        const availableToWatch = airedEps.filter(ep => !data.episodes[`tv-${showId}-s${ep.seasonNum}e${ep.episode_number}`]).length
-        const showEps = Object.values(data.episodes).filter(e => e.showId === showId)
-        const totalEps = details.seasons?.filter(s => s.season_number > 0).reduce((acc, s) => acc + s.episode_count, 0) || 0
+      let furthestIdx = -1
+      airedEps.forEach((ep, idx) => {
+        if (data.episodes[`tv-${showId}-s${ep.seasonNum}e${ep.episode_number}`]) furthestIdx = idx
+      })
+      if (furthestIdx === -1) continue
 
-        result.push({
-          showId, showTitle: details.name, backdrop_path: details.backdrop_path,
-          nextEp: nextEpObj, nextEpRuntime: nextEpObj.runtime, nextEpStill: nextEpObj.still_path || null,
-          watchedCount: showEps.length, totalEps, availableToWatch,
-          lastWatched: showEps.sort((a, b) => new Date(b.watchedAt) - new Date(a.watchedAt))[0]?.watchedAt,
-        })
-      } catch (e) {}
+      const nextEpObj = furthestIdx >= airedEps.length - 1 ? airedEps[0] : airedEps[furthestIdx + 1]
+      const availableToWatch = airedEps.filter(ep => !data.episodes[`tv-${showId}-s${ep.seasonNum}e${ep.episode_number}`]).length
+      const showEps = Object.values(data.episodes).filter(e => e.showId === showId)
+      const totalEps = details.seasons?.filter(s => s.season_number > 0).reduce((acc, s) => acc + s.episode_count, 0) || 0
+
+      result.push({
+        showId, showTitle: details.name, backdrop_path: details.backdrop_path,
+        nextEp: nextEpObj, nextEpRuntime: nextEpObj.runtime, nextEpStill: nextEpObj.still_path || null,
+        watchedCount: showEps.length, totalEps, availableToWatch,
+        lastWatched: showEps.sort((a, b) => new Date(b.watchedAt) - new Date(a.watchedAt))[0]?.watchedAt,
+      })
     }
     setItems(result.sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched)))
   }, [user])
@@ -445,16 +478,37 @@ function UpcomingRow({ user }) {
 
       const upcoming = []
       const seenKeys = new Set()
+      const todayOnly = new Date().toISOString().slice(0, 10)
+      const twoWeeksFromNow = new Date()
+      twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14)
+      const twoWeeksStr = twoWeeksFromNow.toISOString().slice(0, 10)
 
-      for (const id of tvIds) {
+      // Fetch all TV details in batches (parallel)
+      const tvIdArray = Array.from(tvIds)
+      const BATCH_SIZE = 10
+      const tvDetails = {}
+
+      for (let i = 0; i < tvIdArray.length; i += BATCH_SIZE) {
+        const batch = tvIdArray.slice(i, i + BATCH_SIZE)
+        const promises = batch.map(async (id) => {
+          try {
+            const details = await getDetails('tv', id)
+            return { id, details }
+          } catch (e) { return null }
+        })
+        const results = await Promise.all(promises)
+        results.forEach(r => { if (r) tvDetails[r.id] = r.details })
+      }
+
+      for (const id of tvIdArray) {
         try {
-          const details = await getDetails('tv', id)
+          const details = tvDetails[id]
+          if (!details) continue
           const neta = details.next_episode_to_air
           if (!neta?.air_date) continue
-          // Compare dates without time — show all day for today
-          const airDateOnly = neta.air_date // YYYY-MM-DD
-          const todayOnly = new Date().toISOString().slice(0, 10)
+          const airDateOnly = neta.air_date
           if (airDateOnly < todayOnly) continue
+          if (airDateOnly > twoWeeksStr) continue // Skip episodes more than 2 weeks away
           const key = `tv-${id}-s${neta.season_number}e${neta.episode_number}`
           if (seenKeys.has(key)) continue
           seenKeys.add(key)
@@ -467,8 +521,10 @@ function UpcomingRow({ user }) {
         try {
           const details = await getDetails('movie', item.id)
           if (!details.release_date) continue
-          const todayOnly = new Date().toISOString().slice(0, 10)
           if (details.release_date < todayOnly) continue
+          // Filter movies to only show if releasing within 14 days
+          const daysUntil = Math.floor((new Date(details.release_date) - new Date(todayOnly)) / 86400000)
+          if (daysUntil > 14) continue
           upcoming.push({ id: item.id, title: details.title, poster_path: details.poster_path, backdrop_path: details.backdrop_path, airDateStr: details.release_date, isMovie: true })
         } catch (e) {}
       }
