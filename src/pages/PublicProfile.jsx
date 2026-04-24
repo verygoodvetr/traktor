@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getUserByUsername, getUserData } from '../firestore'
-import { IMAGE_BASE } from '../tmdb'
+import { IMAGE_BASE } from '../api'
 import PageWrapper from '../components/PageWrapper'
 
 // Profile background presets

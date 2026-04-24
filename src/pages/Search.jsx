@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { searchMedia, IMAGE_BASE, getMediaMeta, getReleaseStatus } from '../tmdb'
+import { searchMedia, IMAGE_BASE, getMediaMeta, getReleaseStatus } from '../api'
 import PageWrapper from '../components/PageWrapper'
 import { CardSkeleton } from '../components/Skeleton'
 

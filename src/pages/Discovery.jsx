@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  getTrending, getPopularMovies, getPopularShows, getUpcomingMovies,
+  getTrending, getPopularMovies, getPopularShows, getUpcomingMovies, getTopRatedShows,
   IMAGE_BASE, IMAGE_BASE_LARGE,
-} from '../tmdb'
+} from '../api'
+import * as tmdb from '../tmdb' // Keep for top_rated movies which needs TMDB ratings
 import { addToWatched, getUserData, addToWatchlist, removeFromWatchlist } from '../firestore'
 import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
@@ -192,7 +193,7 @@ function Discovery({ user }) {
         getPopularShows(),
         getUpcomingMovies(),
         fetch(`https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_KEY}`).then(r => r.json()).then(d => d.results || []),
-        fetch(`https://api.themoviedb.org/3/tv/top_rated?api_key=${TMDB_KEY}`).then(r => r.json()).then(d => d.results || []),
+        getTopRatedShows(),
       ])
       setTrending((t  || []).map(i => ({ ...i, media_type: i.media_type || 'movie' })))
       setPopularMovies((pm || []).map(i => ({ ...i, media_type: 'movie' })))

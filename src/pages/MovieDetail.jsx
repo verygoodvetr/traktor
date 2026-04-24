@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  getDetails, IMAGE_BASE_LARGE, IMAGE_BASE, IMAGE_BASE_ORIGINAL,
+  getDetails, getSeasonDetails, IMAGE_BASE_LARGE, IMAGE_BASE, IMAGE_BASE_ORIGINAL,
   getAgeRating, getVideos, getSimilar, getWatchProviders,
-} from '../tmdb'
+} from '../api'
 import {
   addToWatched, removeFromWatched, addToWatchlist, removeFromWatchlist,
   getUserData, setRating, getShowEpisodes,
@@ -14,8 +14,6 @@ import { DetailSkeleton } from '../components/Skeleton'
 import ShareModal from '../components/ShareModal'
 import { showToast } from '../components/Toast'
 import { formatDateWithPattern } from './Settings'
-
-const TMDB_KEY = import.meta.env.VITE_TMDB_KEY
 
 function MovieDetail({ user }) {
   const { type, id } = useParams()

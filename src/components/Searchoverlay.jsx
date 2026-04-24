@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { searchMedia, IMAGE_BASE, getReleaseStatus } from '../tmdb'
+import { searchMedia, IMAGE_BASE, getReleaseStatus } from '../api'
 
 function SearchOverlay({ onClose }) {
   const [query, setQuery] = useState('')

@@ -3,14 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import {
   getTrending, getDetails, getStartWatchingMeta,
   getPersonalizedRecommendations,
+  getSeasonDetails,
   IMAGE_BASE, IMAGE_BASE_ORIGINAL, IMAGE_BASE_LARGE
-} from '../tmdb'
+} from '../api'
 import { getUserData, markEpisodeWatched, addToWatched, removeFromWatchlist, addToWatchlist } from '../firestore'
 import PageWrapper from '../components/PageWrapper'
 import { showToast } from '../components/Toast'
 import { getDisplayPrefs, formatDateWithPattern, formatTimeWithPrefs } from './Settings'
-
-const TMDB_KEY = import.meta.env.VITE_TMDB_KEY
 
 // ─────────────────────────────────────────────────────────
 // Global refresh signal
@@ -318,25 +317,18 @@ function ContinueWatchingRow({ user, refreshKey }) {
       if (!details) continue
       if (details.first_air_date && new Date(details.first_air_date) > new Date()) continue
 
-      // Fetch all season data in parallel
+      // Fetch all season data in parallel using unified API
       const seasonPromises = (details.seasons || [])
         .filter(s => s.season_number > 0)
-        .map(s =>
-          fetch(`https://api.themoviedb.org/3/tv/${showId}/season/${s.season_number}?api_key=${TMDB_KEY}`)
-            .then(r => r.json())
-            .catch(() => null)
-        )
+        .map(s => getSeasonDetails(showId, s.season_number).catch(() => null))
       const seasonDataResults = await Promise.all(seasonPromises)
 
       const airedEps = []
-      seasonDataResults.forEach((sd, idx) => {
-        if (!sd) return
-        const seasonNum = (details.seasons || []).filter(s => s.season_number > 0)[idx]?.season_number
-        if (seasonNum) {
-          for (const ep of (sd.episodes || [])) {
-            if (ep.air_date && new Date(ep.air_date) > new Date()) continue
-            airedEps.push({ ...ep, seasonNum })
-          }
+      seasonDataResults.forEach((sd) => {
+        if (!sd?.episodes) return
+        for (const ep of sd.episodes) {
+          if (ep.air_date && new Date(ep.air_date) > new Date()) continue
+          airedEps.push({ ...ep, seasonNum: ep.seasonNumber || ep.seasonNum })
         }
       })
 
@@ -667,8 +659,9 @@ function HistoryRow({ user, refreshKey }) {
           enriched.push({ ...h, title: d.title, backdrop_path: d.backdrop_path, releaseYear: (d.release_date || '').slice(0, 4) })
         } else {
           const d = await getDetails('tv', h.showId)
-          const ep = await fetch(`https://api.themoviedb.org/3/tv/${h.showId}/season/${h.seasonNum}/episode/${h.episodeNum}?api_key=${TMDB_KEY}`).then(r => r.json())
-          enriched.push({ ...h, title: d.name, epName: ep.name, backdrop_path: ep.still_path || d.backdrop_path, epLabel: `S${h.seasonNum} E${h.episodeNum}` })
+          const seasonData = await getSeasonDetails(h.showId, h.seasonNum)
+          const ep = seasonData?.episodes?.find(e => e.episodeNumber === h.episodeNum || e.episode_number === h.episodeNum)
+          enriched.push({ ...h, title: d.name, epName: ep?.name, backdrop_path: ep?.still_path || d.backdrop_path, epLabel: `S${h.seasonNum} E${h.episodeNum}` })
         }
       } catch (e) {}
     }

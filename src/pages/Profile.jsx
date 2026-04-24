@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getUserData } from '../firestore'
-import { getDetails, IMAGE_BASE } from '../tmdb'
+import { getDetails, IMAGE_BASE } from '../api'
 import { useNavigate } from 'react-router-dom'
 import PageWrapper from '../components/PageWrapper'
 import { CardSkeleton } from '../components/Skeleton'

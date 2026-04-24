@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getSeasonDetails, getDetails, IMAGE_BASE, IMAGE_BASE_LARGE, IMAGE_BASE_ORIGINAL } from '../tmdb'
+import { getSeasonDetails, getDetails, IMAGE_BASE, IMAGE_BASE_LARGE, IMAGE_BASE_ORIGINAL } from '../api'
 import { markEpisodeWatched, unmarkEpisodeWatched, markSeasonWatched, unmarkSeasonWatched, getShowEpisodes } from '../firestore'
 import WatchedDatePicker from '../components/WatchedDatePicker'
 import PageWrapper from '../components/PageWrapper'

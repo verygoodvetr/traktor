@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getPersonDetails, IMAGE_BASE, IMAGE_BASE_LARGE } from '../tmdb'
+import { getPersonDetails, IMAGE_BASE, IMAGE_BASE_LARGE } from '../api'
 import PageWrapper from '../components/PageWrapper'
 import { DetailSkeleton } from '../components/Skeleton'
 
